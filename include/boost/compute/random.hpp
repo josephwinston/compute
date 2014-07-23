@@ -15,8 +15,13 @@
 ///
 /// Meta-header to include all Boost.Compute random headers.
 
+#include <boost/compute/random/bernoulli_distribution.hpp>
 #include <boost/compute/random/default_random_engine.hpp>
-#include <boost/compute/random/mersenne_twister.hpp>
+#include <boost/compute/random/discrete_distribution.hpp>
+#include <boost/compute/random/linear_congruential_engine.hpp>
+#include <boost/compute/random/mersenne_twister_engine.hpp>
+#include <boost/compute/random/normal_distribution.hpp>
+#include <boost/compute/random/uniform_int_distribution.hpp>
 #include <boost/compute/random/uniform_real_distribution.hpp>
 
 #endif // BOOST_COMPUTE_RANDOM_HPP

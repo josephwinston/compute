@@ -25,6 +25,7 @@
 #include "context_setup.hpp"
 
 namespace bc = boost::compute;
+namespace compute = boost::compute;
 
 BOOST_AUTO_TEST_CASE(concept_check)
 {
@@ -178,7 +179,7 @@ BOOST_AUTO_TEST_CASE(max_size)
     BOOST_VERIFY(vector.max_size() > vector.size());
 }
 
-#if !defined(BOOST_NO_RVALUE_REFERENCES)
+#ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
 BOOST_AUTO_TEST_CASE(move_ctor)
 {
       int data[] = { 11, 12, 13, 14 };
@@ -190,7 +191,7 @@ BOOST_AUTO_TEST_CASE(move_ctor)
       BOOST_CHECK_EQUAL(b.size(), size_t(4));
       CHECK_RANGE_EQUAL(int, 4, b, (11, 12, 13, 14));
 }
-#endif // !defined(BOOST_NO_RVALUE_REFERENCES)
+#endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
 #if !defined(BOOST_NO_CXX11_HDR_INITIALIZER_LIST) && \
     !defined(BOOST_NO_0X_HDR_INITIALIZER_LIST)
@@ -267,6 +268,49 @@ BOOST_AUTO_TEST_CASE(vector_erase_remove)
 
     // check the rest of the values
     CHECK_RANGE_EQUAL(int, 3, vector, (3, 5, 1));
+}
+
+// see issue #132 (https://github.com/kylelutz/compute/issues/132)
+BOOST_AUTO_TEST_CASE(swap_between_contexts)
+{
+    compute::context ctx1(device);
+    compute::context ctx2(device);
+
+    compute::vector<int> vec1(32, ctx1);
+    compute::vector<int> vec2(32, ctx2);
+
+    BOOST_CHECK(vec1.get_allocator().get_context() == ctx1);
+    BOOST_CHECK(vec2.get_allocator().get_context() == ctx2);
+
+    vec1.swap(vec2);
+
+    BOOST_CHECK(vec1.get_allocator().get_context() == ctx2);
+    BOOST_CHECK(vec2.get_allocator().get_context() == ctx1);
+
+    vec1.resize(64);
+    vec2.resize(64);
+}
+
+BOOST_AUTO_TEST_CASE(assign_from_std_vector)
+{
+    std::vector<int> host_vector;
+    host_vector.push_back(1);
+    host_vector.push_back(9);
+    host_vector.push_back(7);
+    host_vector.push_back(9);
+
+    compute::vector<int> device_vector(context);
+    device_vector.assign(host_vector.begin(), host_vector.end(), queue);
+    BOOST_CHECK_EQUAL(device_vector.size(), size_t(4));
+    CHECK_RANGE_EQUAL(int, 4, device_vector, (1, 9, 7, 9));
+}
+
+BOOST_AUTO_TEST_CASE(assign_constant_value)
+{
+    compute::vector<float> device_vector(10, context);
+    device_vector.assign(3, 6.28f, queue);
+    BOOST_CHECK_EQUAL(device_vector.size(), size_t(3));
+    CHECK_RANGE_EQUAL(float, 3, device_vector, (6.28f, 6.28f, 6.28f));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

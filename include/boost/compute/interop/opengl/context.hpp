@@ -16,7 +16,7 @@
 #include <boost/compute/device.hpp>
 #include <boost/compute/system.hpp>
 #include <boost/compute/context.hpp>
-#include <boost/compute/exception/extension_unsupported_exception.hpp>
+#include <boost/compute/exception/unsupported_extension_error.hpp>
 #include <boost/compute/interop/opengl/cl_gl.hpp>
 
 #ifdef __linux__
@@ -32,8 +32,8 @@ namespace compute {
 /// Once created, the shared context can be used to create OpenCL memory
 /// objects which can interact with OpenGL memory objects (e.g. VBOs).
 ///
-/// \throws extension_unsupported_exception if no CL-GL sharing capable
-/// devices are found.
+/// \throws unsupported_extension_error if no CL-GL sharing capable devices
+///         are found.
 inline context opengl_create_shared_context()
 {
     // name of the OpenGL sharing extension for the system
@@ -106,7 +106,7 @@ inline context opengl_create_shared_context()
 
     // no CL-GL sharing capable devices found
     BOOST_THROW_EXCEPTION(
-        extension_unsupported_exception(cl_gl_sharing_extension)
+        unsupported_extension_error(cl_gl_sharing_extension)
     );
 }
 

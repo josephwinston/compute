@@ -15,7 +15,7 @@
 
 #include <boost/throw_exception.hpp>
 
-#include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/context.hpp>
 #include <boost/compute/exception.hpp>
 #include <boost/compute/image_format.hpp>
@@ -25,6 +25,9 @@
 
 namespace boost {
 namespace compute {
+
+// forward declarations
+class command_queue;
 
 class image2d : public memory_object
 {
@@ -79,7 +82,7 @@ public:
         #endif
 
         if(!m_mem){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
         }
     }
 
@@ -96,6 +99,22 @@ public:
 
         return *this;
     }
+
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new image object from \p other.
+    image2d(image2d&& other) BOOST_NOEXCEPT
+        : memory_object(std::move(other))
+    {
+    }
+
+    /// Move-assigns the image from \p other to \c *this.
+    image2d& operator=(image2d&& other) BOOST_NOEXCEPT
+    {
+        memory_object::operator=(std::move(other));
+
+        return *this;
+    }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// Destroys the image2d object.
     ~image2d()
@@ -163,6 +182,10 @@ public:
 
         return formats;
     }
+
+    /// Creates a new image with a copy of the data in \c *this. Uses \p queue
+    /// to perform the copy operation.
+    image2d clone(command_queue &queue) const;
 };
 
 namespace detail {

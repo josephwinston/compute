@@ -32,6 +32,7 @@
 #include <boost/compute/algorithm/fill.hpp>
 #include <boost/compute/algorithm/fill_n.hpp>
 #include <boost/compute/algorithm/find.hpp>
+#include <boost/compute/algorithm/find_end.hpp>
 #include <boost/compute/algorithm/find_if.hpp>
 #include <boost/compute/algorithm/find_if_not.hpp>
 #include <boost/compute/algorithm/for_each.hpp>
@@ -39,9 +40,11 @@
 #include <boost/compute/algorithm/generate.hpp>
 #include <boost/compute/algorithm/generate_n.hpp>
 #include <boost/compute/algorithm/inclusive_scan.hpp>
+#include <boost/compute/algorithm/includes.hpp>
 #include <boost/compute/algorithm/inner_product.hpp>
 #include <boost/compute/algorithm/iota.hpp>
 #include <boost/compute/algorithm/is_partitioned.hpp>
+#include <boost/compute/algorithm/is_permutation.hpp>
 #include <boost/compute/algorithm/is_sorted.hpp>
 #include <boost/compute/algorithm/lower_bound.hpp>
 #include <boost/compute/algorithm/max_element.hpp>
@@ -49,10 +52,13 @@
 #include <boost/compute/algorithm/min_element.hpp>
 #include <boost/compute/algorithm/minmax_element.hpp>
 #include <boost/compute/algorithm/mismatch.hpp>
+#include <boost/compute/algorithm/next_permutation.hpp>
 #include <boost/compute/algorithm/none_of.hpp>
 #include <boost/compute/algorithm/partial_sum.hpp>
 #include <boost/compute/algorithm/partition.hpp>
 #include <boost/compute/algorithm/partition_copy.hpp>
+#include <boost/compute/algorithm/partition_point.hpp>
+#include <boost/compute/algorithm/prev_permutation.hpp>
 #include <boost/compute/algorithm/random_shuffle.hpp>
 #include <boost/compute/algorithm/reduce.hpp>
 #include <boost/compute/algorithm/remove.hpp>
@@ -64,12 +70,21 @@
 #include <boost/compute/algorithm/rotate.hpp>
 #include <boost/compute/algorithm/rotate_copy.hpp>
 #include <boost/compute/algorithm/scatter.hpp>
+#include <boost/compute/algorithm/search.hpp>
+#include <boost/compute/algorithm/search_n.hpp>
+#include <boost/compute/algorithm/set_difference.hpp>
+#include <boost/compute/algorithm/set_intersection.hpp>
+#include <boost/compute/algorithm/set_symmetric_difference.hpp>
+#include <boost/compute/algorithm/set_union.hpp>
 #include <boost/compute/algorithm/sort.hpp>
 #include <boost/compute/algorithm/sort_by_key.hpp>
+#include <boost/compute/algorithm/stable_partition.hpp>
 #include <boost/compute/algorithm/stable_sort.hpp>
 #include <boost/compute/algorithm/swap_ranges.hpp>
 #include <boost/compute/algorithm/transform.hpp>
 #include <boost/compute/algorithm/transform_reduce.hpp>
+#include <boost/compute/algorithm/unique.hpp>
+#include <boost/compute/algorithm/unique_copy.hpp>
 #include <boost/compute/algorithm/upper_bound.hpp>
 
 #endif // BOOST_COMPUTE_ALGORITHM_HPP

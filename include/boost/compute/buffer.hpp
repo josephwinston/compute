@@ -11,9 +11,7 @@
 #ifndef BOOST_COMPUTE_BUFFER_HPP
 #define BOOST_COMPUTE_BUFFER_HPP
 
-#include <boost/move/move.hpp>
-
-#include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/context.hpp>
 #include <boost/compute/exception.hpp>
 #include <boost/compute/memory_object.hpp>
@@ -22,12 +20,37 @@
 namespace boost {
 namespace compute {
 
+// forward declarations
+class command_queue;
+
 /// \class buffer
 /// \brief A memory buffer on a compute device.
 ///
 /// The buffer class represents a memory buffer on a compute device.
 ///
-/// \see vector
+/// Buffers are allocated within a compute context. For example, to allocate
+/// a memory buffer for 32 float's:
+///
+/// \snippet test/test_buffer.cpp constructor
+///
+/// Once created, data can be copied to and from the buffer using the
+/// \c enqueue_*_buffer() methods in the command_queue class. For example, to
+/// copy a set of \c int values from the host to the device:
+/// \code
+/// int data[] = { 1, 2, 3, 4 };
+///
+/// queue.enqueue_write_buffer(buf, 0, 4 * sizeof(int), data);
+/// \endcode
+///
+/// Also see the copy() algorithm for a higher-level interface to copying data
+/// between the host and the device. For a higher-level, dynamically-resizable,
+/// type-safe container for data on a compute device, use the vector<T> class.
+///
+/// Buffer objects have reference semantics. Creating a copy of a buffer
+/// object simply creates another reference to the underlying OpenCL memory
+/// object. To create an actual copy use the buffer::clone() method.
+///
+/// \see context, command_queue
 class buffer : public memory_object
 {
 public:
@@ -60,7 +83,7 @@ public:
                                host_ptr,
                                &error);
         if(!m_mem){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
         }
     }
 
@@ -70,11 +93,7 @@ public:
     {
     }
 
-    buffer(BOOST_RV_REF(buffer) other)
-        : memory_object(boost::move(static_cast<memory_object &>(other)))
-    {
-    }
-
+    /// Copies the buffer object from \p other to \c *this.
     buffer& operator=(const buffer &other)
     {
         if(this != &other){
@@ -84,16 +103,21 @@ public:
         return *this;
     }
 
-    buffer& operator=(BOOST_RV_REF(buffer) other)
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new buffer object from \p other.
+    buffer(buffer&& other) BOOST_NOEXCEPT
+        : memory_object(std::move(other))
     {
-        if(this != &other){
-            memory_object::operator=(
-                boost::move(static_cast<memory_object &>(other))
-            );
-        }
+    }
+
+    /// Move-assigns the buffer from \p other to \c *this.
+    buffer& operator=(buffer&& other) BOOST_NOEXCEPT
+    {
+        memory_object::operator=(std::move(other));
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// Destroys the buffer object.
     ~buffer()
@@ -121,9 +145,33 @@ public:
         return get_memory_info<T>(info);
     }
 
-private:
-    BOOST_COPYABLE_AND_MOVABLE(buffer)
+    /// \overload
+    template<int Enum>
+    typename detail::get_object_info_type<buffer, Enum>::type
+    get_info() const;
+
+    /// Creates a new buffer with a copy of the data in \c *this. Uses
+    /// \p queue to perform the copy.
+    buffer clone(command_queue &queue) const;
 };
+
+/// \internal_ define get_info() specializations for buffer
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(buffer,
+    ((cl_mem_object_type, CL_MEM_TYPE))
+    ((cl_mem_flags, CL_MEM_FLAGS))
+    ((size_t, CL_MEM_SIZE))
+    ((void *, CL_MEM_HOST_PTR))
+    ((cl_uint, CL_MEM_MAP_COUNT))
+    ((cl_uint, CL_MEM_REFERENCE_COUNT))
+    ((cl_context, CL_MEM_CONTEXT))
+)
+
+#ifdef CL_VERSION_1_1
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(buffer,
+    ((cl_mem, CL_MEM_ASSOCIATED_MEMOBJECT))
+    ((size_t, CL_MEM_OFFSET))
+)
+#endif // CL_VERSION_1_1
 
 namespace detail {
 

@@ -10,12 +10,7 @@
 
 #include <iostream>
 
-#include <boost/compute/buffer.hpp>
-#include <boost/compute/command_queue.hpp>
-#include <boost/compute/context.hpp>
-#include <boost/compute/kernel.hpp>
-#include <boost/compute/program.hpp>
-#include <boost/compute/system.hpp>
+#include <boost/compute/core.hpp>
 
 namespace compute = boost::compute;
 
@@ -70,14 +65,14 @@ int main()
     compute::command_queue queue(context, device);
 
     // write the data from 'a' and 'b' to the device
-    queue.enqueue_write_buffer(buffer_a, a);
-    queue.enqueue_write_buffer(buffer_b, b);
+    queue.enqueue_write_buffer(buffer_a, 0, 4 * sizeof(float), a);
+    queue.enqueue_write_buffer(buffer_b, 0, 4 * sizeof(float), b);
 
     // run the add kernel
-    queue.enqueue_1d_range_kernel(kernel, 0, 4);
+    queue.enqueue_1d_range_kernel(kernel, 0, 4, 0);
 
     // transfer results back to the host array 'c'
-    queue.enqueue_read_buffer(buffer_c, c);
+    queue.enqueue_read_buffer(buffer_c, 0, 4 * sizeof(float), c);
 
     // print out results in 'c'
     std::cout << "c: [" << c[0] << ", "

@@ -11,17 +11,26 @@
 #ifndef BOOST_COMPUTE_FUNCTION_HPP
 #define BOOST_COMPUTE_FUNCTION_HPP
 
+#include <map>
 #include <string>
 #include <sstream>
+#include <vector>
 
+#include <boost/assert.hpp>
 #include <boost/config.hpp>
+#include <boost/function_types/parameter_types.hpp>
+#include <boost/preprocessor/repetition.hpp>
+#include <boost/mpl/for_each.hpp>
+#include <boost/mpl/size.hpp>
+#include <boost/mpl/transform.hpp>
 #include <boost/static_assert.hpp>
 #include <boost/tuple/tuple.hpp>
+#include <boost/type_traits/add_pointer.hpp>
 #include <boost/type_traits/function_traits.hpp>
 
 #include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/type_traits/type_name.hpp>
-#include <boost/compute/detail/function_signature_to_mpl_vector.hpp>
 
 namespace boost {
 namespace compute {
@@ -37,9 +46,19 @@ public:
         size_t, arity = boost::tuples::length<ArgTuple>::value
     );
 
-    invoked_function(const std::string &name, const std::string &source)
+    invoked_function(const std::string &name,
+                     const std::string &source)
         : m_name(name),
           m_source(source)
+    {
+    }
+
+    invoked_function(const std::string &name,
+                     const std::string &source,
+                     const std::map<std::string, std::string> &definitions)
+        : m_name(name),
+          m_source(source),
+          m_definitions(definitions)
     {
     }
 
@@ -48,6 +67,17 @@ public:
                      const ArgTuple &args)
         : m_name(name),
           m_source(source),
+          m_args(args)
+    {
+    }
+
+    invoked_function(const std::string &name,
+                     const std::string &source,
+                     const std::map<std::string, std::string> &definitions,
+                     const ArgTuple &args)
+        : m_name(name),
+          m_source(source),
+          m_definitions(definitions),
           m_args(args)
     {
     }
@@ -62,6 +92,11 @@ public:
         return m_source;
     }
 
+    const std::map<std::string, std::string>& definitions() const
+    {
+        return m_definitions;
+    }
+
     const ArgTuple& args() const
     {
         return m_args;
@@ -70,6 +105,7 @@ public:
 private:
     std::string m_name;
     std::string m_source;
+    std::map<std::string, std::string> m_definitions;
     ArgTuple m_args;
 };
 
@@ -89,6 +125,9 @@ public:
     BOOST_STATIC_CONSTANT(
         size_t, arity = boost::function_traits<Signature>::arity
     );
+
+    /// \internal_
+    typedef Signature signature;
 
     /// Creates a new function object with \p name.
     function(const std::string &name)
@@ -120,6 +159,12 @@ public:
     }
 
     /// \internal_
+    void define(std::string name, std::string value = std::string())
+    {
+        m_definitions[name] = value;
+    }
+
+    /// \internal_
     detail::invoked_function<result_type, boost::tuple<> >
     operator()() const
     {
@@ -129,7 +174,7 @@ public:
         );
 
         return detail::invoked_function<result_type, boost::tuple<> >(
-            m_name, m_source
+            m_name, m_source, m_definitions
         );
     }
 
@@ -144,7 +189,7 @@ public:
         );
 
         return detail::invoked_function<result_type, boost::tuple<Arg1> >(
-            m_name, m_source, boost::make_tuple(arg1)
+            m_name, m_source, m_definitions, boost::make_tuple(arg1)
         );
     }
 
@@ -159,7 +204,7 @@ public:
         );
 
         return detail::invoked_function<result_type, boost::tuple<Arg1, Arg2> >(
-            m_name, m_source, boost::make_tuple(arg1, arg2)
+            m_name, m_source, m_definitions, boost::make_tuple(arg1, arg2)
         );
     }
 
@@ -174,13 +219,14 @@ public:
         );
 
         return detail::invoked_function<result_type, boost::tuple<Arg1, Arg2, Arg3> >(
-            m_name, m_source, boost::make_tuple(arg1, arg2, arg3)
+            m_name, m_source, m_definitions, boost::make_tuple(arg1, arg2, arg3)
         );
     }
 
 private:
     std::string m_name;
     std::string m_source;
+    std::map<std::string, std::string> m_definitions;
 };
 
 /// Creates a function object given its \p name and \p source.
@@ -200,19 +246,68 @@ make_function_from_source(const std::string &name, const std::string &source)
 
 namespace detail {
 
+// given a string containing the arguments declaration for a function
+// like: "(int a, const float b)", returns a vector containing the name
+// of each argument (e.g. ["a", "b"]).
+inline std::vector<std::string> parse_argument_names(const char *arguments)
+{
+    BOOST_ASSERT_MSG(
+        arguments[0] == '(' && arguments[std::strlen(arguments)-1] == ')',
+        "Arguments should start and end with parentheses"
+    );
+
+    std::vector<std::string> args;
+
+    size_t last_space = 0;
+    size_t skip_comma = 0;
+    for(size_t i = 1; i < std::strlen(arguments) - 2; i++){
+        const char c = arguments[i];
+
+        if(c == ' '){
+            last_space = i;
+        }
+        else if(c == ',' && !skip_comma){
+            std::string name(
+                arguments + last_space + 1, i - last_space - 1
+            );
+            args.push_back(name);
+        }
+        else if(c == '<'){
+            skip_comma++;
+        }
+        else if(c == '>'){
+            skip_comma--;
+        }
+    }
+
+    std::string last_argument(
+        arguments + last_space + 1, std::strlen(arguments) - last_space - 2
+    );
+    args.push_back(last_argument);
+
+    return args;
+}
+
 struct signature_argument_inserter
 {
-    signature_argument_inserter(std::stringstream &s_, size_t last)
+    signature_argument_inserter(std::stringstream &s_, const char *arguments, size_t last)
         : s(s_)
     {
         n = 0;
         m_last = last;
+
+        m_argument_names = parse_argument_names(arguments);
+
+        BOOST_ASSERT_MSG(
+            m_argument_names.size() == last,
+            "Wrong number of arguments"
+        );
     }
 
     template<class T>
-    void operator()(const T&)
+    void operator()(const T*)
     {
-        s << type_name<T>() << " _" << n+1;
+        s << type_name<T>() << " " << m_argument_names[n];
         if(n+1 < m_last){
             s << ", ";
         }
@@ -222,36 +317,92 @@ struct signature_argument_inserter
     size_t n;
     size_t m_last;
     std::stringstream &s;
+    std::vector<std::string> m_argument_names;
 };
 
 template<class Signature>
-std::string make_function_declaration(const std::string &name)
+inline std::string make_function_declaration(const char *name, const char *arguments)
 {
     typedef typename
         boost::function_traits<Signature>::result_type result_type;
     typedef typename
-        function_signature_to_mpl_vector<Signature>::type signature_vector;
+        boost::function_types::parameter_types<Signature>::type parameter_types;
     typedef typename
-        mpl::size<signature_vector>::type arity_type;
+        mpl::size<parameter_types>::type arity_type;
 
     std::stringstream s;
-    signature_argument_inserter i(s, arity_type::value);
     s << "inline " << type_name<result_type>() << " " << name;
     s << "(";
-    mpl::for_each<signature_vector>(i);
+
+    if(arity_type::value > 0){
+        signature_argument_inserter i(s, arguments, arity_type::value);
+        mpl::for_each<
+            typename mpl::transform<parameter_types, boost::add_pointer<mpl::_1>
+        >::type>(i);
+    }
+
     s << ")";
     return s.str();
 }
 
+struct argument_list_inserter
+{
+    argument_list_inserter(std::stringstream &s_, const char first, size_t last)
+        : s(s_)
+    {
+        n = 0;
+        m_last = last;
+        m_name = first;
+    }
+
+    template<class T>
+    void operator()(const T*)
+    {
+        s << type_name<T>() << " " << m_name++;
+        if(n+1 < m_last){
+            s << ", ";
+        }
+        n++;
+    }
+
+    size_t n;
+    size_t m_last;
+    char m_name;
+    std::stringstream &s;
+};
+
+template<class Signature>
+inline std::string generate_argument_list(const char first = 'a')
+{
+    typedef typename
+        boost::function_types::parameter_types<Signature>::type parameter_types;
+    typedef typename
+        mpl::size<parameter_types>::type arity_type;
+
+    std::stringstream s;
+    s << '(';
+
+    if(arity_type::value > 0){
+        argument_list_inserter i(s, first, arity_type::value);
+        mpl::for_each<
+            typename mpl::transform<parameter_types, boost::add_pointer<mpl::_1>
+        >::type>(i);
+    }
+
+    s << ')';
+    return s.str();
+}
+
 // used by the BOOST_COMPUTE_FUNCTION() macro to create a function
-// with the given signature, name, and source.
+// with the given signature, name, arguments, and source.
 template<class Signature>
 inline function<Signature>
-make_function_impl(const std::string &name, const std::string &source)
+make_function_impl(const char *name, const char *arguments, const char *source)
 {
     std::stringstream s;
-    s << make_function_declaration<Signature>(name);
+    s << make_function_declaration<Signature>(name, arguments);
     s << source;
+
     return make_function_from_source<Signature>(name, s.str());
 }
 
@@ -263,12 +414,11 @@ make_function_impl(const std::string &name, const std::string &source)
 ///
 /// \param return_type The return type for the function.
 /// \param name The name of the function.
-/// \param args A list of argument types for the function.
+/// \param arguments A list of arguments for the function.
 /// \param source The OpenCL C source code for the function.
 ///
 /// The function declaration and signature are automatically created using
-/// the \p return_type, \p name, and \p args macro parameters. The argument
-/// names are \c _1 to \c _N (where \c N is the arity of the function).
+/// the \p return_type, \p name, and \p arguments macro parameters.
 ///
 /// The source code for the function is interpreted as OpenCL C99 source code
 /// which is stringified and passed to the OpenCL compiler when the function
@@ -276,28 +426,28 @@ make_function_impl(const std::string &name, const std::string &source)
 ///
 /// For example, to create a function which squares a number:
 /// \code
-/// BOOST_COMPUTE_FUNCTION(float, square, (float),
+/// BOOST_COMPUTE_FUNCTION(float, square, (float x),
 /// {
-///     return _1 * _1;
+///     return x * x;
 /// });
 /// \endcode
 ///
 /// And to create a function which sums two numbers:
 /// \code
-/// BOOST_COMPUTE_FUNCTION(int, sum_two, (int, int),
+/// BOOST_COMPUTE_FUNCTION(int, sum_two, (int x, int y),
 /// {
-///     return _1 + _2;
+///     return x + y;
 /// });
 /// \endcode
 ///
 /// \see BOOST_COMPUTE_CLOSURE()
 #ifdef BOOST_COMPUTE_DOXYGEN_INVOKED
-#define BOOST_COMPUTE_FUNCTION(return_type, name, args, source)
+#define BOOST_COMPUTE_FUNCTION(return_type, name, arguments, source)
 #else
-#define BOOST_COMPUTE_FUNCTION(return_type, name, args, ...) \
-    ::boost::compute::function<return_type args> name = \
-        ::boost::compute::detail::make_function_impl<return_type args>( \
-            #name, #__VA_ARGS__ \
+#define BOOST_COMPUTE_FUNCTION(return_type, name, arguments, ...) \
+    ::boost::compute::function<return_type arguments> name = \
+        ::boost::compute::detail::make_function_impl<return_type arguments>( \
+            #name, #arguments, #__VA_ARGS__ \
         )
 #endif
 

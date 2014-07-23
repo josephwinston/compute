@@ -87,7 +87,29 @@ inline void dispatch_sort(Iterator first,
 /// Sorts the values in the range [\p first, \p last) according to
 /// \p compare.
 ///
-/// If no compare function is specified, \c less is used.
+/// \param first first element in the range to sort
+/// \param last last element in the range to sort
+/// \param compare comparison function (by default \c less)
+/// \param queue command queue to perform the operation
+///
+/// For example, to sort a vector on the device:
+/// \code
+/// // create vector on the device with data
+/// float data[] = { 2.f, 4.f, 1.f, 3.f };
+/// boost::compute::vector<float> vec(data, data + 4, queue);
+///
+/// // sort the vector on the device
+/// boost::compute::sort(vec.begin(), vec.end(), queue);
+/// \endcode
+///
+/// The sort() algorithm can also be directly used with host iterators. This
+/// example will automatically transfer the data to the device, sort it, and
+/// then transfer the data back to the host:
+/// \code
+/// std::vector<int> data = { 9, 3, 2, 5, 1, 4, 6, 7 };
+///
+/// boost::compute::sort(data.begin(), data.end(), queue);
+/// \endcode
 ///
 /// \see is_sorted()
 template<class Iterator, class Compare>
@@ -96,8 +118,6 @@ inline void sort(Iterator first,
                  Compare compare,
                  command_queue &queue = system::default_queue())
 {
-    typedef typename std::iterator_traits<Iterator>::value_type T;
-
     size_t count = detail::iterator_range_size(first, last);
     if(count < 2){
         return;

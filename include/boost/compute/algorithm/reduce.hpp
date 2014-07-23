@@ -175,9 +175,8 @@ inline void generic_reduce(InputIterator first,
         return;
     }
 
-    boost::compute::vector<result_type> value(1, context);
-
     if(device.type() & device::cpu){
+        boost::compute::vector<result_type> value(1, context);
         detail::serial_reduce(first, last, value.begin(), function, queue);
         boost::compute::copy_n(value.begin(), 1, result, queue);
     }
@@ -202,25 +201,19 @@ inline void generic_reduce(InputIterator first,
     }
 }
 
-template<class T>
-inline void dispatch_reduce(const buffer_iterator<T> first,
-                            const buffer_iterator<T> last,
+template<class InputIterator, class T>
+inline void dispatch_reduce(InputIterator first,
+                            InputIterator last,
                             const buffer_iterator<T> result,
                             const plus<T> &function,
                             command_queue &queue)
 {
-    const device &device = queue.get_device();
-    if(device.type() & device::gpu && first.get_index() == 0){
-        reduce_on_gpu(first, last, result, queue);
-    }
-    else {
-        generic_reduce(first, last, result, function, queue);
-    }
+    reduce_on_gpu(first, last, result, function, queue);
 }
 
-template<class T, class OutputIterator>
-inline void dispatch_reduce(const buffer_iterator<T> first,
-                            const buffer_iterator<T> last,
+template<class InputIterator, class OutputIterator, class T>
+inline void dispatch_reduce(InputIterator first,
+                            InputIterator last,
                             OutputIterator result,
                             const plus<T> &function,
                             command_queue &queue)
@@ -260,15 +253,10 @@ inline void dispatch_reduce(InputIterator first,
 /// result argument. This allows for values to be reduced and copied
 /// to the host all with a single function call.
 ///
-/// For example, to calculate the sum of a vector of int's:
-/// \code
-/// // get/create vector of int's on the device
-/// boost:compute::vector<int> vec = ...
+/// For example, to calculate the sum of the values in a device vector and
+/// copy the result to a value on the host:
 ///
-/// // compute the sum
-/// int sum = 0;
-/// boost::compute::reduce(vec.begin(), vec.end(), &sum, queue);
-/// \endcode
+/// \snippet test/test_reduce.cpp sum_int
 ///
 /// \see accumulate()
 template<class InputIterator, class OutputIterator, class BinaryFunction>

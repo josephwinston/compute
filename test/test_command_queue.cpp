@@ -18,6 +18,7 @@
 #include <boost/compute/algorithm/fill.hpp>
 #include <boost/compute/container/vector.hpp>
 
+#include "check_macros.hpp"
 #include "context_setup.hpp"
 
 namespace bc = boost::compute;
@@ -26,6 +27,24 @@ namespace compute = boost::compute;
 BOOST_AUTO_TEST_CASE(get_context)
 {
     BOOST_VERIFY(queue.get_context() == context);
+    BOOST_VERIFY(queue.get_info<CL_QUEUE_CONTEXT>() == context.get());
+}
+
+BOOST_AUTO_TEST_CASE(get_device)
+{
+    BOOST_VERIFY(queue.get_info<CL_QUEUE_DEVICE>() == device.get());
+}
+
+BOOST_AUTO_TEST_CASE(equality_operator)
+{
+    compute::command_queue queue1(context, device);
+    BOOST_CHECK(queue1 == queue1);
+
+    compute::command_queue queue2 = queue1;
+    BOOST_CHECK(queue1 == queue2);
+
+    compute::command_queue queue3(context, device);
+    BOOST_CHECK(queue1 != queue3);
 }
 
 BOOST_AUTO_TEST_CASE(event_profiling)
@@ -60,7 +79,7 @@ BOOST_AUTO_TEST_CASE(kernel_profiling)
     boost::compute::buffer buffer(context, sizeof(data));
 
     // copy input data to device
-    queue.enqueue_write_buffer(buffer, sizeof(data), data);
+    queue.enqueue_write_buffer(buffer, 0, sizeof(data), data);
 
     // setup kernel
     const char source[] =
@@ -98,7 +117,7 @@ BOOST_AUTO_TEST_CASE(kernel_profiling)
     event.get_profiling_info<cl_ulong>(bc::event::profiling_command_end);
 
     // read results back to host
-    queue.enqueue_read_buffer(buffer, sizeof(data), data);
+    queue.enqueue_read_buffer(buffer, 0, sizeof(data), data);
 
     // check results
     BOOST_CHECK_EQUAL(data[0], 2);
@@ -162,7 +181,7 @@ BOOST_AUTO_TEST_CASE(write_buffer_rect)
 
     // check output values
     int output[4];
-    queue.enqueue_read_buffer(buffer, 4 * sizeof(int), output);
+    queue.enqueue_read_buffer(buffer, 0, 4 * sizeof(int), output);
     BOOST_CHECK_EQUAL(output[0], 1);
     BOOST_CHECK_EQUAL(output[1], 3);
     BOOST_CHECK_EQUAL(output[2], 5);
@@ -180,9 +199,7 @@ static void nullary_kernel()
 BOOST_AUTO_TEST_CASE(native_kernel)
 {
     cl_device_exec_capabilities exec_capabilities =
-        device.get_info<cl_device_exec_capabilities>(
-            CL_DEVICE_EXECUTION_CAPABILITIES
-        );
+        device.get_info<CL_DEVICE_EXECUTION_CAPABILITIES>();
     if(!(exec_capabilities & CL_EXEC_NATIVE_KERNEL)){
         std::cerr << "skipping native_kernel test: "
                   << "device does not support CL_EXEC_NATIVE_KERNEL"
@@ -196,6 +213,33 @@ BOOST_AUTO_TEST_CASE(native_kernel)
     queue.enqueue_native_kernel(&nullary_kernel);
     queue.finish();
     BOOST_CHECK_EQUAL(nullary_kernel_executed, true);
+}
+
+BOOST_AUTO_TEST_CASE(copy_with_wait_list)
+{
+    int data1[] = { 1, 3, 5, 7 };
+    int data2[] = { 2, 4, 6, 8 };
+
+    compute::buffer buf1(context, 4 * sizeof(int));
+    compute::buffer buf2(context, 4 * sizeof(int));
+
+    compute::event write_event1 =
+        queue.enqueue_write_buffer_async(buf1, 0, buf1.size(), data1);
+
+    compute::event write_event2 =
+        queue.enqueue_write_buffer_async(buf2, 0, buf2.size(), data2);
+
+    compute::event read_event1 =
+        queue.enqueue_read_buffer_async(buf1, 0, buf1.size(), data2, write_event1);
+
+    compute::event read_event2 =
+        queue.enqueue_read_buffer_async(buf2, 0, buf2.size(), data1, write_event2);
+
+    read_event1.wait();
+    read_event2.wait();
+
+    CHECK_HOST_RANGE_EQUAL(int, 4, data1, (2, 4, 6, 8));
+    CHECK_HOST_RANGE_EQUAL(int, 4, data2, (1, 3, 5, 7));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

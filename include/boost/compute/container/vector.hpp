@@ -16,8 +16,9 @@
 #include <iterator>
 #include <exception>
 
-#include <boost/config.hpp>
 #include <boost/throw_exception.hpp>
+
+#include <boost/compute/config.hpp>
 
 #if !defined(BOOST_NO_CXX11_HDR_INITIALIZER_LIST) && \
     !defined(BOOST_NO_0X_HDR_INITIALIZER_LIST)
@@ -42,6 +43,61 @@ namespace compute {
 
 /// \class vector
 /// \brief A resizable array of values.
+///
+/// The vector<T> class stores a dynamic array of values. Internally, the data
+/// is stored in an OpenCL buffer object.
+///
+/// The vector class is the prefered container for storing and accessing data
+/// on a compute device. In most cases it should be used instead of directly
+/// dealing with buffer objects. If the undelying buffer is needed, it can be
+/// accessed with the get_buffer() method.
+///
+/// The internal storage is allocated in a specific OpenCL context which is
+/// passed as an argument to the constructor when the vector is created.
+///
+/// For example, to create a vector on the device containing space for ten
+/// \c int values:
+/// \code
+/// boost::compute::vector<int> vec(10, context);
+/// \endcode
+///
+/// Allocation and data transfer can also be performed in a single step:
+/// \code
+/// // values on the host
+/// int data[] = { 1, 2, 3, 4 };
+///
+/// // create a vector of size four and copy the values from data
+/// boost::compute::vector<int> vec(data, data + 4, queue);
+/// \endcode
+///
+/// The Boost.Compute vector class provides a STL-like API and is modeled
+/// after the std::vector class from the C++ standard library. It can be used
+/// with any of the STL-like algorithms provided by Boost.Compute including
+/// copy(), transform(), and sort() (among many others). For example:
+/// \code
+/// // a vector on a compute device
+/// boost::compute::vector<float> vec = ...
+///
+/// // copy data to the vector from a host std:vector
+/// boost::compute::copy(host_vec.begin(), host_vec.end(), vec.begin(), queue);
+///
+/// // copy data from the vector to a host std::vector
+/// boost::compute::copy(vec.begin(), vec.end(), host_vec.begin(), queue);
+///
+/// // sort the values in the vector
+/// boost::compute::sort(vec.begin(), vec.end(), queue);
+///
+/// // calculate the sum of the values in the vector (also see reduce())
+/// float sum = boost::compute::accumulate(vec.begin(), vec.end(), 0, queue);
+///
+/// // reverse the values in the vector
+/// boost::compute::reverse(vec.begin(), vec.end(), queue);
+///
+/// // fill the vector with ones
+/// boost::compute::fill(vec.begin(), vec.end(), 1, queue);
+/// \endcode
+///
+/// \see buffer
 template<class T, class Alloc = allocator<T> >
 class vector
 {
@@ -59,6 +115,7 @@ public:
     typedef std::reverse_iterator<iterator> reverse_iterator;
     typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 
+    /// Creates an empty vector in \p context.
     explicit vector(const context &context = system::default_context())
         : m_size(0),
           m_allocator(context)
@@ -66,6 +123,18 @@ public:
         m_data = m_allocator.allocate(_minimum_capacity());
     }
 
+    /// Creates a vector with space for \p count elements in \p context.
+    ///
+    /// Note that unlike \c std::vector's constructor, this will not initialize
+    /// the values in the container. Either call the vector constructor which
+    /// takes a value to initialize with or use the fill() algorithm to set
+    /// the initial values.
+    ///
+    /// For example:
+    /// \code
+    /// // create a vector on the device with space for ten ints
+    /// boost::compute::vector<int> vec(10, context);
+    /// \endcode
     explicit vector(size_type count,
                     const context &context = system::default_context())
         : m_size(count),
@@ -74,6 +143,14 @@ public:
         m_data = m_allocator.allocate((std::max)(count, _minimum_capacity()));
     }
 
+    /// Creates a vector with space for \p count elements and sets each equal
+    /// to \p value.
+    ///
+    /// For example:
+    /// \code
+    /// // creates a vector with four values set to nine (e.g. [9, 9, 9, 9]).
+    /// boost::compute::vector<int> vec(4, 9, queue);
+    /// \endcode
     vector(size_type count,
            const T &value,
            command_queue &queue = system::default_queue())
@@ -85,6 +162,17 @@ public:
         ::boost::compute::fill_n(begin(), count, value, queue);
     }
 
+    /// Creates a vector with space for the values in the range [\p first,
+    /// \p last) and copies them into the vector with \p queue.
+    ///
+    /// For example:
+    /// \code
+    /// // values on the host
+    /// int data[] = { 1, 2, 3, 4 };
+    ///
+    /// // create a vector of size four and copy the values from data
+    /// boost::compute::vector<int> vec(data, data + 4, queue);
+    /// \endcode
     template<class InputIterator>
     vector(InputIterator first,
            InputIterator last,
@@ -97,6 +185,7 @@ public:
         ::boost::compute::copy(first, last, begin(), queue);
     }
 
+    /// Creates a new vector and copies the values from \p other.
     vector(const vector<T> &other)
         : m_size(other.m_size),
           m_allocator(other.m_allocator)
@@ -110,16 +199,7 @@ public:
         }
     }
 
-    #if !defined(BOOST_NO_RVALUE_REFERENCES)
-    vector(vector<T> &&vector)
-        : m_data(std::move(vector.m_data)),
-          m_size(vector.m_size),
-          m_allocator(std::move(vector.m_allocator))
-    {
-        vector.m_size = 0;
-    }
-    #endif // !defined(BOOST_NO_RVALUE_REFERENCES)
-
+    /// Creates a new vector and copies the values from \p vector.
     template<class OtherAlloc>
     vector(const std::vector<T, OtherAlloc> &vector,
            command_queue &queue = system::default_queue())
@@ -144,13 +224,6 @@ public:
     }
     #endif // !defined(BOOST_NO_CXX11_HDR_INITIALIZER_LIST)
 
-    ~vector()
-    {
-        if(m_size){
-            m_allocator.deallocate(m_data, m_size);
-        }
-    }
-
     vector<T>& operator=(const vector<T> &other)
     {
         if(this != &other){
@@ -171,6 +244,41 @@ public:
         ::boost::compute::copy(vector.begin(), vector.end(), begin(), queue);
         queue.finish();
         return *this;
+    }
+
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new vector from \p other.
+    vector(vector<T>&& other)
+        : m_data(std::move(other.m_data)),
+          m_size(other.m_size),
+          m_allocator(std::move(other.m_allocator))
+    {
+        other.m_size = 0;
+    }
+
+    /// Move-assigns the data from \p other to \c *this.
+    vector<T>& operator=(vector<T>&& other)
+    {
+        if(m_size){
+            m_allocator.deallocate(m_data, m_size);
+        }
+
+        m_data = std::move(other.m_data);
+        m_size = other.m_size;
+        m_allocator = std::move(other.m_allocator);
+
+        other.m_size = 0;
+
+        return *this;
+    }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
+
+    /// Destroys the vector object.
+    ~vector()
+    {
+        if(m_size){
+            m_allocator.deallocate(m_data, m_size);
+        }
     }
 
     iterator begin()
@@ -233,6 +341,7 @@ public:
         return rend();
     }
 
+    /// Returns the number of elements in the vector.
     size_type size() const
     {
         return m_size;
@@ -243,6 +352,7 @@ public:
         return m_allocator.max_size();
     }
 
+    /// Resizes the vector to \p size.
     void resize(size_type size, command_queue &queue)
     {
         if(size < capacity()){
@@ -269,6 +379,7 @@ public:
         }
     }
 
+    /// \overload
     void resize(size_type size)
     {
         command_queue queue = default_queue();
@@ -276,11 +387,13 @@ public:
         queue.finish();
     }
 
+    /// Returns \c true if the vector is empty.
     bool empty() const
     {
         return m_size == 0;
     }
 
+    /// Returns the capacity of the vector.
     size_type capacity() const
     {
         return m_data.get_buffer().size() / sizeof(T);
@@ -364,6 +477,10 @@ public:
                 InputIterator last,
                 command_queue &queue)
     {
+        // resize vector for new contents
+        resize(detail::iterator_range_size(first, last), queue);
+
+        // copy values into the vector
         ::boost::compute::copy(first, last, begin(), queue);
     }
 
@@ -377,6 +494,10 @@ public:
 
     void assign(size_type n, const T &value, command_queue &queue)
     {
+        // resize vector for new contents
+        resize(n, queue);
+
+        // fill vector with value
         ::boost::compute::fill_n(begin(), n, value, queue);
     }
 
@@ -387,11 +508,19 @@ public:
         queue.finish();
     }
 
+    /// Inserts \p value at the end of the vector (resizing if neccessary).
+    ///
+    /// Note that calling \c push_back() to insert data values one at a time
+    /// is inefficient as there is a non-trivial overhead in performing a data
+    /// transfer to the device. It is usually better to store a set of values
+    /// on the host (for example, in a \c std::vector) and then transfer them
+    /// in bulk using the \c insert() method or the copy() algorithm.
     void push_back(const T &value, command_queue &queue)
     {
         insert(end(), value, queue);
     }
 
+    /// \overload
     void push_back(const T &value)
     {
         command_queue queue = default_queue();
@@ -463,6 +592,8 @@ public:
         queue.finish();
     }
 
+    /// Inserts the values in the range [\p first, \p last) into the vector at
+    /// \p position using \p queue.
     template<class InputIterator>
     void insert(iterator position,
                 InputIterator first,
@@ -485,6 +616,7 @@ public:
         );
     }
 
+    /// \overload
     template<class InputIterator>
     void insert(iterator position, InputIterator first, InputIterator last)
     {
@@ -508,8 +640,10 @@ public:
 
     iterator erase(iterator first, iterator last, command_queue &queue)
     {
-        ::boost::compute::vector<T> tmp(last, end(), queue);
-        ::boost::compute::copy(tmp.begin(), tmp.end(), first, queue);
+        if(last != end()){
+            ::boost::compute::vector<T> tmp(last, end(), queue);
+            ::boost::compute::copy(tmp.begin(), tmp.end(), first, queue);
+        }
 
         difference_type count = std::distance(first, last);
         resize(size() - static_cast<size_type>(count), queue);
@@ -525,12 +659,15 @@ public:
         return iter;
     }
 
+    /// Swaps the contents of \c *this with \p other.
     void swap(vector<T> &other)
     {
         std::swap(m_data, other.m_data);
         std::swap(m_size, other.m_size);
+        std::swap(m_allocator, other.m_allocator);
     }
 
+    /// Removes all elements from the vector.
     void clear()
     {
         m_size = 0;
@@ -541,7 +678,7 @@ public:
         return m_allocator;
     }
 
-    /// Returns the buffer.
+    /// Returns the underlying buffer.
     const buffer& get_buffer() const
     {
         return m_data.get_buffer();

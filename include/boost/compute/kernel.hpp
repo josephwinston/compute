@@ -13,18 +13,15 @@
 
 #include <string>
 
-#include <boost/config.hpp>
 #include <boost/assert.hpp>
-#include <boost/move/move.hpp>
 #include <boost/utility/enable_if.hpp>
 
-#include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/program.hpp>
 #include <boost/compute/exception.hpp>
 #include <boost/compute/type_traits/is_fundamental.hpp>
 #include <boost/compute/detail/get_object_info.hpp>
 #include <boost/compute/detail/assert_cl_success.hpp>
-#include <boost/compute/detail/program_create_kernel_result.hpp>
 
 namespace boost {
 namespace compute {
@@ -37,7 +34,7 @@ template<class T> struct set_kernel_arg;
 /// \class kernel
 /// \brief A compute kernel.
 ///
-/// \see program
+/// \see command_queue, program
 class kernel
 {
 public:
@@ -57,21 +54,15 @@ public:
         }
     }
 
-    /// \internal_
-    ///
-    /// see 'detail/program_create_kernel_result.hpp' for documentation
-    kernel(const detail::program_create_kernel_result &result)
-        : m_kernel(result.kernel)
-    {
-    }
-
     /// Creates a new kernel object with \p name from \p program.
     kernel(const program &program, const std::string &name)
     {
-        detail::program_create_kernel_result
-            result = program.create_kernel(name);
+        cl_int error = 0;
+        m_kernel = clCreateKernel(program.get(), name.c_str(), &error);
 
-        m_kernel = result.kernel;
+        if(!m_kernel){
+            BOOST_THROW_EXCEPTION(opencl_error(error));
+        }
     }
 
     /// Creates a new kernel object as a copy of \p other.
@@ -83,12 +74,7 @@ public:
         }
     }
 
-    kernel(BOOST_RV_REF(kernel) other)
-        : m_kernel(other.m_kernel)
-    {
-        other.m_kernel = 0;
-    }
-
+    /// Copies the kernel object from \p other to \c *this.
     kernel& operator=(const kernel &other)
     {
         if(this != &other){
@@ -106,19 +92,27 @@ public:
         return *this;
     }
 
-    kernel& operator=(BOOST_RV_REF(kernel) other)
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new kernel object from \p other.
+    kernel(kernel&& other) BOOST_NOEXCEPT
+        : m_kernel(other.m_kernel)
     {
-        if(this != &other){
-            if(m_kernel){
-                clReleaseKernel(m_kernel);
-            }
+        other.m_kernel = 0;
+    }
 
-            m_kernel = other.m_kernel;
-            other.m_kernel = 0;
+    /// Move-assigns the kernel from \p other to \c *this.
+    kernel& operator=(kernel&& other) BOOST_NOEXCEPT
+    {
+        if(m_kernel){
+            clReleaseKernel(m_kernel);
         }
+
+        m_kernel = other.m_kernel;
+        other.m_kernel = 0;
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// Destroys the kernel object.
     ~kernel()
@@ -169,6 +163,11 @@ public:
         return detail::get_object_info<T>(clGetKernelInfo, m_kernel, info);
     }
 
+    /// \overload
+    template<int Enum>
+    typename detail::get_object_info_type<kernel, Enum>::type
+    get_info() const;
+
     #if defined(CL_VERSION_1_2) || defined(BOOST_COMPUTE_DOXYGEN_INVOKED)
     /// Returns information about the argument at \p index.
     ///
@@ -186,7 +185,7 @@ public:
                                         &value,
                                         0);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
 
         return value;
@@ -207,7 +206,7 @@ public:
                                               &value,
                                               0);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
 
         return value;
@@ -225,7 +224,7 @@ public:
                                     size,
                                     value);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
     }
 
@@ -272,6 +271,18 @@ public:
     }
     #endif // BOOST_NO_VARIADIC_TEMPLATES
 
+    /// Returns \c true if the kernel is the same at \p other.
+    bool operator==(const kernel &other) const
+    {
+        return m_kernel == other.m_kernel;
+    }
+
+    /// Returns \c true if the kernel is different from \p other.
+    bool operator!=(const kernel &other) const
+    {
+        return m_kernel != other.m_kernel;
+    }
+
     /// \internal_
     operator cl_kernel() const
     {
@@ -304,10 +315,28 @@ private:
     #endif // BOOST_NO_VARIADIC_TEMPLATES
 
 private:
-    BOOST_COPYABLE_AND_MOVABLE(kernel)
-
     cl_kernel m_kernel;
 };
+
+inline kernel program::create_kernel(const std::string &name) const
+{
+    return kernel(*this, name);
+}
+
+/// \internal_ define get_info() specializations for kernel
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(kernel,
+    ((std::string, CL_KERNEL_FUNCTION_NAME))
+    ((cl_uint, CL_KERNEL_NUM_ARGS))
+    ((cl_uint, CL_KERNEL_REFERENCE_COUNT))
+    ((cl_context, CL_KERNEL_CONTEXT))
+    ((cl_program, CL_KERNEL_PROGRAM))
+)
+
+#ifdef CL_VERSION_1_2
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(kernel,
+    ((std::string, CL_KERNEL_ATTRIBUTES))
+)
+#endif // CL_VERSION_1_2
 
 namespace detail {
 

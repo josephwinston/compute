@@ -11,10 +11,9 @@
 #ifndef BOOST_COMPUTE_IMAGE_SAMPLER_HPP
 #define BOOST_COMPUTE_IMAGE_SAMPLER_HPP
 
-#include <boost/move/move.hpp>
 #include <boost/throw_exception.hpp>
 
-#include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/context.hpp>
 #include <boost/compute/exception.hpp>
 #include <boost/compute/kernel.hpp>
@@ -40,6 +39,11 @@ public:
         linear = CL_FILTER_LINEAR
     };
 
+    image_sampler()
+        : m_sampler(0)
+    {
+    }
+
     image_sampler(const context &context,
                   bool normalized_coords,
                   cl_addressing_mode addressing_mode,
@@ -52,7 +56,7 @@ public:
                                     filter_mode,
                                     &error);
         if(!m_sampler){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
         }
     }
 
@@ -72,12 +76,6 @@ public:
         }
     }
 
-    image_sampler(BOOST_RV_REF(image_sampler) other)
-        : m_sampler(other.m_sampler)
-    {
-        other.m_sampler = 0;
-    }
-
     image_sampler& operator=(const image_sampler &other)
     {
         if(this != &other){
@@ -95,19 +93,25 @@ public:
         return *this;
     }
 
-    image_sampler& operator=(BOOST_RV_REF(image_sampler) other)
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    image_sampler(image_sampler&& other) BOOST_NOEXCEPT
+        : m_sampler(other.m_sampler)
     {
-        if(this != &other){
-            if(m_sampler){
-                clReleaseSampler(m_sampler);
-            }
+        other.m_sampler = 0;
+    }
 
-            m_sampler = other.m_sampler;
-            other.m_sampler = 0;
+    image_sampler& operator=(image_sampler&& other) BOOST_NOEXCEPT
+    {
+        if(m_sampler){
+            clReleaseSampler(m_sampler);
         }
+
+        m_sampler = other.m_sampler;
+        other.m_sampler = 0;
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     ~image_sampler()
     {
@@ -134,16 +138,40 @@ public:
         return detail::get_object_info<T>(clGetSamplerInfo, m_sampler, info);
     }
 
+    /// \overload
+    template<int Enum>
+    typename detail::get_object_info_type<image_sampler, Enum>::type
+    get_info() const;
+
+    /// Returns \c true if the sampler is the same at \p other.
+    bool operator==(const image_sampler &other) const
+    {
+        return m_sampler == other.m_sampler;
+    }
+
+    /// Returns \c true if the sampler is different from \p other.
+    bool operator!=(const image_sampler &other) const
+    {
+        return m_sampler != other.m_sampler;
+    }
+
     operator cl_sampler() const
     {
         return m_sampler;
     }
 
 private:
-    BOOST_COPYABLE_AND_MOVABLE(image_sampler)
-
     cl_sampler m_sampler;
 };
+
+/// \internal_ define get_info() specializations for image_sampler
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(image_sampler,
+    ((cl_uint, CL_SAMPLER_REFERENCE_COUNT))
+    ((cl_context, CL_SAMPLER_CONTEXT))
+    ((cl_addressing_mode, CL_SAMPLER_ADDRESSING_MODE))
+    ((cl_filter_mode, CL_SAMPLER_FILTER_MODE))
+    ((bool, CL_SAMPLER_NORMALIZED_COORDS))
+)
 
 namespace detail {
 

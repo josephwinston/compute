@@ -15,6 +15,9 @@
 #include <sstream>
 
 #include <boost/config.hpp>
+#include <boost/fusion/adapted/boost_tuple.hpp>
+#include <boost/mpl/for_each.hpp>
+#include <boost/mpl/transform.hpp>
 #include <boost/typeof/typeof.hpp>
 #include <boost/static_assert.hpp>
 #include <boost/algorithm/string.hpp>
@@ -40,11 +43,13 @@ public:
     );
 
     invoked_closure(const std::string &name,
-                     const std::string &source,
-                     const ArgTuple &args,
-                     const CaptureTuple &capture)
+                    const std::string &source,
+                    const std::map<std::string, std::string> &definitions,
+                    const ArgTuple &args,
+                    const CaptureTuple &capture)
         : m_name(name),
           m_source(source),
+          m_definitions(definitions),
           m_args(args),
           m_capture(capture)
     {
@@ -60,6 +65,11 @@ public:
         return m_source;
     }
 
+    const std::map<std::string, std::string>& definitions() const
+    {
+        return m_definitions;
+    }
+
     const ArgTuple& args() const
     {
         return m_args;
@@ -73,6 +83,7 @@ public:
 private:
     std::string m_name;
     std::string m_source;
+    std::map<std::string, std::string> m_definitions;
     ArgTuple m_args;
     CaptureTuple m_capture;
 };
@@ -122,6 +133,12 @@ public:
     }
 
     /// \internal_
+    void define(std::string name, std::string value = std::string())
+    {
+        m_definitions[name] = value;
+    }
+
+    /// \internal_
     detail::invoked_closure<result_type, boost::tuple<>, CaptureTuple>
     operator()() const
     {
@@ -131,7 +148,7 @@ public:
         );
 
         return detail::invoked_closure<result_type, boost::tuple<>, CaptureTuple>(
-            m_name, m_source, boost::make_tuple(), m_capture
+            m_name, m_source, m_definitions, boost::make_tuple(), m_capture
         );
     }
 
@@ -146,7 +163,7 @@ public:
         );
 
         return detail::invoked_closure<result_type, boost::tuple<Arg1>, CaptureTuple>(
-            m_name, m_source, boost::make_tuple(arg1), m_capture
+            m_name, m_source, m_definitions, boost::make_tuple(arg1), m_capture
         );
     }
 
@@ -161,7 +178,7 @@ public:
         );
 
         return detail::invoked_closure<result_type, boost::tuple<Arg1, Arg2>, CaptureTuple>(
-            m_name, m_source, boost::make_tuple(arg1, arg2), m_capture
+            m_name, m_source, m_definitions, boost::make_tuple(arg1, arg2), m_capture
         );
     }
 
@@ -176,13 +193,14 @@ public:
         );
 
         return detail::invoked_closure<result_type, boost::tuple<Arg1, Arg2, Arg3>, CaptureTuple>(
-            m_name, m_source, boost::make_tuple(arg1, arg2, arg3), m_capture
+            m_name, m_source, m_definitions, boost::make_tuple(arg1, arg2, arg3), m_capture
         );
     }
 
 private:
     std::string m_name;
     std::string m_source;
+    std::map<std::string, std::string> m_definitions;
     CaptureTuple m_capture;
 };
 
@@ -228,24 +246,27 @@ struct closure_signature_argument_inserter
 
 template<class Signature, class CaptureTuple>
 inline std::string
-make_closure_declaration(const std::string &name,
-                         const CaptureTuple &capture,
+make_closure_declaration(const char *name,
+                         const char *arguments,
+                         const CaptureTuple&,
                          const char *capture_string)
 {
     typedef typename
         boost::function_traits<Signature>::result_type result_type;
     typedef typename
-        function_signature_to_mpl_vector<Signature>::type signature_vector;
+        boost::function_types::parameter_types<Signature>::type parameter_types;
     typedef typename
-        mpl::size<signature_vector>::type arity_type;
+        mpl::size<parameter_types>::type arity_type;
 
     std::stringstream s;
     s << "inline " << type_name<result_type>() << " " << name;
     s << "(";
 
     // insert function arguments
-    signature_argument_inserter i(s, arity_type::value);
-    mpl::for_each<signature_vector>(i);
+    signature_argument_inserter i(s, arguments, arity_type::value);
+    mpl::for_each<
+        typename mpl::transform<parameter_types, boost::add_pointer<mpl::_1>
+    >::type>(i);
     s << ", ";
 
     // insert capture arguments
@@ -262,14 +283,16 @@ make_closure_declaration(const std::string &name,
 // function with the given signature, name, capture, and source.
 template<class Signature, class CaptureTuple>
 inline closure<Signature, CaptureTuple>
-make_closure_impl(const std::string &name,
+make_closure_impl(const char *name,
+                  const char *arguments,
                   const CaptureTuple &capture,
                   const char *capture_string,
                   const std::string &source)
 {
     std::stringstream s;
-    s << make_closure_declaration<Signature>(name, capture, capture_string);
+    s << make_closure_declaration<Signature>(name, arguments, capture, capture_string);
     s << source;
+
     return closure<Signature, CaptureTuple>(name, capture, s.str());
 }
 
@@ -281,7 +304,7 @@ make_closure_impl(const std::string &name,
 ///
 /// \param return_type The return type for the function.
 /// \param name The name of the function.
-/// \param args A list of argument types for the function.
+/// \param arguments A list of arguments for the function.
 /// \param capture A list of variables to capture.
 /// \param source The OpenCL C source code for the function.
 ///
@@ -293,9 +316,9 @@ make_closure_impl(const std::string &name,
 ///
 /// // create a closure function which returns true if the 2D point
 /// // argument is contained within a circle of the given radius
-/// BOOST_COMPUTE_CLOSURE(bool, is_in_circle, (float2_), (radius),
+/// BOOST_COMPUTE_CLOSURE(bool, is_in_circle, (const float2_ p), (radius),
 /// {
-///     return sqrt(_1.x*_1.x + _1.y*_1.y) < radius;
+///     return sqrt(p.x*p.x + p.y*p.y) < radius;
 /// });
 ///
 /// // vector of 2D points
@@ -309,14 +332,16 @@ make_closure_impl(const std::string &name,
 ///
 /// \see BOOST_COMPUTE_FUNCTION()
 #ifdef BOOST_COMPUTE_DOXYGEN_INVOKED
-#define BOOST_COMPUTE_CLOSURE(return_type, name, args, capture, source)
+#define BOOST_COMPUTE_CLOSURE(return_type, name, arguments, capture, source)
 #else
-#define BOOST_COMPUTE_CLOSURE(return_type, name, args, capture, ...) \
+#define BOOST_COMPUTE_CLOSURE(return_type, name, arguments, capture, ...) \
     ::boost::compute::closure< \
-        return_type args, BOOST_TYPEOF(boost::make_tuple capture) \
+        return_type arguments, BOOST_TYPEOF(boost::make_tuple capture) \
     > name = \
-        ::boost::compute::detail::make_closure_impl<return_type args>( \
-            #name, boost::make_tuple capture, #capture, #__VA_ARGS__ \
+        ::boost::compute::detail::make_closure_impl< \
+            return_type arguments \
+        >( \
+            #name, #arguments, boost::make_tuple capture, #capture, #__VA_ARGS__ \
         )
 #endif
 

@@ -14,11 +14,10 @@
 #include <string>
 #include <vector>
 
-#include <boost/move/move.hpp>
 #include <boost/range/algorithm.hpp>
 #include <boost/algorithm/string.hpp>
 
-#include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/exception.hpp>
 #include <boost/compute/types/builtin.hpp>
 #include <boost/compute/detail/get_object_info.hpp>
@@ -35,12 +34,9 @@ namespace compute {
 /// via the platform::devices() method.
 ///
 /// The default compute device for the system can be obtained with
-/// the system::default_device() method.
+/// the system::default_device() method. For example:
 ///
-/// For example:
-/// \code
-/// boost::compute::device gpu = boost::compute::system::default_device();
-/// \endcode
+/// \snippet test/test_device.cpp default_gpu
 ///
 /// \see platform, context, command_queue
 class device
@@ -64,7 +60,7 @@ public:
         : m_id(id)
     {
         #ifdef CL_VERSION_1_2
-        if(m_id && retain){
+        if(m_id && retain && is_subdevice()){
             clRetainDevice(m_id);
         }
         #else
@@ -77,23 +73,18 @@ public:
         : m_id(other.m_id)
     {
         #ifdef CL_VERSION_1_2
-        if(m_id){
+        if(m_id && is_subdevice()){
             clRetainDevice(m_id);
         }
         #endif
     }
 
-    device(BOOST_RV_REF(device) other)
-        : m_id(other.m_id)
-    {
-        other.m_id = 0;
-    }
-
+    /// Copies the device from \p other to \c *this.
     device& operator=(const device &other)
     {
         if(this != &other){
             #ifdef CL_VERSION_1_2
-            if(m_id){
+            if(m_id && is_subdevice()){
                 clReleaseDevice(m_id);
             }
             #endif
@@ -101,7 +92,7 @@ public:
             m_id = other.m_id;
 
             #ifdef CL_VERSION_1_2
-            if(m_id){
+            if(m_id && is_subdevice()){
                 clRetainDevice(m_id);
             }
             #endif
@@ -110,27 +101,35 @@ public:
         return *this;
     }
 
-    device& operator=(BOOST_RV_REF(device) other)
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new device object from \p other.
+    device(device&& other) BOOST_NOEXCEPT
+        : m_id(other.m_id)
     {
-        if(this != &other){
-            #ifdef CL_VERSION_1_2
-            if(m_id){
-                clReleaseDevice(m_id);
-            }
-            #endif
+        other.m_id = 0;
+    }
 
-            m_id = other.m_id;
-            other.m_id = 0;
+    /// Move-assigns the device from \p other to \c *this.
+    device& operator=(device&& other) BOOST_NOEXCEPT
+    {
+        #ifdef CL_VERSION_1_2
+        if(m_id && is_subdevice()){
+            clReleaseDevice(m_id);
         }
+        #endif
+
+        m_id = other.m_id;
+        other.m_id = 0;
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// Destroys the device object.
     ~device()
     {
         #ifdef CL_VERSION_1_2
-        if(m_id){
+        if(m_id && is_subdevice()){
             BOOST_COMPUTE_ASSERT_CL_SUCCESS(
                 clReleaseDevice(m_id)
             );
@@ -142,6 +141,12 @@ public:
     cl_device_id id() const
     {
         return m_id;
+    }
+
+    /// Returns a reference to the underlying OpenCL device id.
+    cl_device_id& get() const
+    {
+        return const_cast<cl_device_id&>(m_id);
     }
 
     /// Returns the type of the device.
@@ -263,7 +268,35 @@ public:
         return get_info<size_t>(CL_DEVICE_PROFILING_TIMER_RESOLUTION);
     }
 
+    /// Returns \c true if the device is a sub-device.
+    bool is_subdevice() const
+    {
+    #if defined(CL_VERSION_1_2)
+        try {
+            return get_info<cl_device_id>(CL_DEVICE_PARENT_DEVICE) != 0;
+        }
+        catch(opencl_error&){
+            // the get_info() call above will throw if the device's opencl version
+            // is less than 1.2 (in which case it can't be a sub-device).
+            return false;
+        }
+    #else
+        return false;
+    #endif
+    }
+
     /// Returns information about the device.
+    ///
+    /// For example, to get the number of compute units:
+    /// \code
+    /// device.get_info<cl_uint>(CL_DEVICE_MAX_COMPUTE_UNITS);
+    /// \endcode
+    ///
+    /// Alternatively, the template-specialized version can be used which
+    /// automatically determines the result type:
+    /// \code
+    /// device.get_info<CL_DEVICE_MAX_COMPUTE_UNITS>();
+    /// \endcode
     ///
     /// \see_opencl_ref{clGetDeviceInfo}
     template<class T>
@@ -271,6 +304,11 @@ public:
     {
         return detail::get_object_info<T>(clGetDeviceInfo, m_id, info);
     }
+
+    /// \overload
+    template<int Enum>
+    typename detail::get_object_info_type<device, Enum>::type
+    get_info() const;
 
     #if defined(CL_VERSION_1_2) || defined(BOOST_COMPUTE_DOXYGEN_INVOKED)
     /// Partitions the device into multiple sub-devices according to
@@ -284,14 +322,14 @@ public:
         uint_ count = 0;
         int_ ret = clCreateSubDevices(m_id, properties, 0, 0, &count);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
 
         // get sub-device ids
         std::vector<cl_device_id> ids(count);
         ret = clCreateSubDevices(m_id, properties, count, &ids[0], 0);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
 
         // convert ids to device objects
@@ -346,9 +384,35 @@ public:
     }
     #endif // CL_VERSION_1_2
 
-private:
-    BOOST_COPYABLE_AND_MOVABLE(device)
+    /// Returns \c true if the device is the same at \p other.
+    bool operator==(const device &other) const
+    {
+        return m_id == other.m_id;
+    }
 
+    /// Returns \c true if the device is different from \p other.
+    bool operator!=(const device &other) const
+    {
+        return m_id != other.m_id;
+    }
+
+    /// \internal_
+    bool check_version(int major, int minor) const
+    {
+        std::stringstream stream;
+        stream << version();
+
+        int actual_major, actual_minor;
+        stream.ignore(7); // 'OpenCL '
+        stream >> actual_major;
+        stream.ignore(1); // '.'
+        stream >> actual_minor;
+
+        return actual_major > major ||
+               (actual_major == major && actual_minor >= minor);
+    }
+
+private:
     cl_device_id m_id;
 };
 
@@ -386,6 +450,100 @@ inline uint_ device::preferred_vector_width<double_>() const
 {
     return get_info<uint_>(CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE);
 }
+
+/// \internal_ define get_info() specializations for device
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(device,
+    ((cl_uint, CL_DEVICE_ADDRESS_BITS))
+    ((bool, CL_DEVICE_AVAILABLE))
+    ((bool, CL_DEVICE_COMPILER_AVAILABLE))
+    ((bool, CL_DEVICE_ENDIAN_LITTLE))
+    ((bool, CL_DEVICE_ERROR_CORRECTION_SUPPORT))
+    ((cl_device_exec_capabilities, CL_DEVICE_EXECUTION_CAPABILITIES))
+    ((std::string, CL_DEVICE_EXTENSIONS))
+    ((cl_ulong, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE))
+    ((cl_device_mem_cache_type, CL_DEVICE_GLOBAL_MEM_CACHE_TYPE))
+    ((cl_ulong, CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE))
+    ((cl_ulong, CL_DEVICE_GLOBAL_MEM_SIZE))
+    ((bool, CL_DEVICE_IMAGE_SUPPORT))
+    ((size_t, CL_DEVICE_IMAGE2D_MAX_HEIGHT))
+    ((size_t, CL_DEVICE_IMAGE2D_MAX_WIDTH))
+    ((size_t, CL_DEVICE_IMAGE3D_MAX_DEPTH))
+    ((size_t, CL_DEVICE_IMAGE3D_MAX_HEIGHT))
+    ((size_t, CL_DEVICE_IMAGE3D_MAX_WIDTH))
+    ((cl_ulong, CL_DEVICE_LOCAL_MEM_SIZE))
+    ((cl_device_local_mem_type, CL_DEVICE_LOCAL_MEM_TYPE))
+    ((cl_uint, CL_DEVICE_MAX_CLOCK_FREQUENCY))
+    ((cl_uint, CL_DEVICE_MAX_COMPUTE_UNITS))
+    ((cl_uint, CL_DEVICE_MAX_CONSTANT_ARGS))
+    ((cl_ulong, CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE))
+    ((cl_ulong, CL_DEVICE_MAX_MEM_ALLOC_SIZE))
+    ((size_t, CL_DEVICE_MAX_PARAMETER_SIZE))
+    ((cl_uint, CL_DEVICE_MAX_READ_IMAGE_ARGS))
+    ((cl_uint, CL_DEVICE_MAX_SAMPLERS))
+    ((size_t, CL_DEVICE_MAX_WORK_GROUP_SIZE))
+    ((cl_uint, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS))
+    ((std::vector<size_t>, CL_DEVICE_MAX_WORK_ITEM_SIZES))
+    ((cl_uint, CL_DEVICE_MAX_WRITE_IMAGE_ARGS))
+    ((cl_uint, CL_DEVICE_MEM_BASE_ADDR_ALIGN))
+    ((cl_uint, CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE))
+    ((std::string, CL_DEVICE_NAME))
+    ((cl_platform_id, CL_DEVICE_PLATFORM))
+    ((cl_uint, CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR))
+    ((cl_uint, CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT))
+    ((cl_uint, CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT))
+    ((cl_uint, CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG))
+    ((cl_uint, CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT))
+    ((cl_uint, CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE))
+    ((std::string, CL_DEVICE_PROFILE))
+    ((size_t, CL_DEVICE_PROFILING_TIMER_RESOLUTION))
+    ((cl_command_queue_properties, CL_DEVICE_QUEUE_PROPERTIES))
+    ((cl_device_fp_config, CL_DEVICE_SINGLE_FP_CONFIG))
+    ((cl_device_type, CL_DEVICE_TYPE))
+    ((std::string, CL_DEVICE_VENDOR))
+    ((cl_uint, CL_DEVICE_VENDOR_ID))
+    ((std::string, CL_DEVICE_VERSION))
+    ((std::string, CL_DRIVER_VERSION))
+)
+
+#ifdef CL_DEVICE_DOUBLE_FP_CONFIG
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(device,
+    ((cl_device_fp_config, CL_DEVICE_DOUBLE_FP_CONFIG))
+)
+#endif
+
+#ifdef CL_DEVICE_HALF_FP_CONFIG
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(device,
+    ((cl_device_fp_config, CL_DEVICE_HALF_FP_CONFIG))
+)
+#endif
+
+#ifdef CL_VERSION_1_1
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(device,
+    ((bool, CL_DEVICE_HOST_UNIFIED_MEMORY))
+    ((cl_uint, CL_DEVICE_NATIVE_VECTOR_WIDTH_CHAR))
+    ((cl_uint, CL_DEVICE_NATIVE_VECTOR_WIDTH_SHORT))
+    ((cl_uint, CL_DEVICE_NATIVE_VECTOR_WIDTH_INT))
+    ((cl_uint, CL_DEVICE_NATIVE_VECTOR_WIDTH_LONG))
+    ((cl_uint, CL_DEVICE_NATIVE_VECTOR_WIDTH_FLOAT))
+    ((cl_uint, CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE))
+    ((std::string, CL_DEVICE_OPENCL_C_VERSION))
+)
+#endif // CL_VERSION_1_1
+
+#ifdef CL_VERSION_1_2
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(device,
+    ((std::string, CL_DEVICE_BUILT_IN_KERNELS))
+    ((bool, CL_DEVICE_LINKER_AVAILABLE))
+    ((cl_device_id, CL_DEVICE_PARENT_DEVICE))
+    ((cl_uint, CL_DEVICE_PARTITION_MAX_SUB_DEVICES))
+    ((cl_device_partition_property, CL_DEVICE_PARTITION_PROPERTIES))
+    ((cl_device_affinity_domain, CL_DEVICE_PARTITION_AFFINITY_DOMAIN))
+    ((cl_device_partition_property, CL_DEVICE_PARTITION_TYPE))
+    ((size_t, CL_DEVICE_PRINTF_BUFFER_SIZE))
+    ((bool, CL_DEVICE_PREFERRED_INTEROP_USER_SYNC))
+    ((cl_uint, CL_DEVICE_REFERENCE_COUNT))
+)
+#endif // CL_VERSION_1_2
 
 } // end compute namespace
 } // end boost namespace

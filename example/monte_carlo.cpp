@@ -36,15 +36,15 @@ int main()
     size_t n = 10000000;
 
     // generate random numbers
-    compute::default_random_engine rng(context);
+    compute::default_random_engine rng(queue);
     compute::vector<uint_> vector(n * 2, context);
-    rng.fill(vector.begin(), vector.end(), queue);
+    rng.generate(vector.begin(), vector.end(), queue);
 
     // function returing true if the point is within the unit circle
-    BOOST_COMPUTE_FUNCTION(bool, is_in_unit_circle, (uint2_),
+    BOOST_COMPUTE_FUNCTION(bool, is_in_unit_circle, (const uint2_ point),
     {
-        const float x = _1.x / (float) UINT_MAX - 1;
-        const float y = _1.y / (float) UINT_MAX - 1;
+        const float x = point.x / (float) UINT_MAX - 1;
+        const float y = point.y / (float) UINT_MAX - 1;
 
         return (x*x + y*y) < 1.0f;
     });

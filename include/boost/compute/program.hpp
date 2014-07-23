@@ -20,13 +20,10 @@
 #include <iostream>
 #endif
 
-#include <boost/move/move.hpp>
-
-#include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/context.hpp>
 #include <boost/compute/exception.hpp>
 #include <boost/compute/detail/assert_cl_success.hpp>
-#include <boost/compute/detail/program_create_kernel_result.hpp>
 
 #ifdef BOOST_COMPUTE_USE_OFFLINE_CACHE
 #include <sstream>
@@ -40,10 +37,37 @@
 namespace boost {
 namespace compute {
 
+class kernel;
+
 /// \class program
 /// \brief A compute program.
 ///
-/// The program class represents a compute program.
+/// The program class represents an OpenCL program.
+///
+/// Program objects are created with one of the static \c create_with_*
+/// functions. For example, to create a program from a source string:
+///
+/// \snippet test/test_program.cpp create_with_source
+///
+/// And to create a program from a source file:
+/// \code
+/// boost::compute::program bar_program =
+///     boost::compute::program::create_with_source_file("/path/to/bar.cl", context);
+/// \endcode
+///
+/// Once a program object has been succesfully created, it can be compiled
+/// using the build() method:
+/// \code
+/// // build the program
+/// foo_program.build();
+/// \endcode
+///
+/// Kernel objects can be created from compiled programs using the kernel
+/// class's constructor:
+/// \code
+/// // create a kernel from the compiled program
+/// boost::compute::kernel foo_kernel(foo_program, "foo");
+/// \endcode
 ///
 /// \see kernel
 class program
@@ -74,12 +98,7 @@ public:
         }
     }
 
-    program(BOOST_RV_REF(program) other)
-        : m_program(other.m_program)
-    {
-        other.m_program = 0;
-    }
-
+    /// Copies the program object from \p other to \c *this.
     program& operator=(const program &other)
     {
         if(this != &other){
@@ -97,19 +116,27 @@ public:
         return *this;
     }
 
-    program& operator=(BOOST_RV_REF(program) other)
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new program object from \p other.
+    program(program&& other) BOOST_NOEXCEPT
+        : m_program(other.m_program)
     {
-        if(this != &other){
-            if(m_program){
-                clReleaseProgram(m_program);
-            }
+        other.m_program = 0;
+    }
 
-            m_program = other.m_program;
-            other.m_program = 0;
+    /// Move-assigns the program from \p other to \c *this.
+    program& operator=(program&& other) BOOST_NOEXCEPT
+    {
+        if(m_program){
+            clReleaseProgram(m_program);
         }
+
+        m_program = other.m_program;
+        other.m_program = 0;
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// Destroys the program object.
     ~program()
@@ -146,7 +173,7 @@ public:
                                         &binary_ptr,
                                         0);
         if(error != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
         }
 
         return binary;
@@ -191,8 +218,28 @@ public:
         return detail::get_object_info<T>(clGetProgramInfo, m_program, info);
     }
 
+    /// \overload
+    template<int Enum>
+    typename detail::get_object_info_type<program, Enum>::type
+    get_info() const;
+
     /// Builds the program with \p options.
-    cl_int build(const std::string &options = std::string())
+    ///
+    /// If the program fails to compile, this function will throw an
+    /// opencl_error exception.
+    /// \code
+    /// try {
+    ///     // attempt to compile to program
+    ///     program.build();
+    /// }
+    /// catch(boost::compute::opencl_error &e){
+    ///     // program failed to compile, print out the build log
+    ///     std::cout << program.build_log() << std::endl;
+    /// }
+    /// \endcode
+    ///
+    /// \see_opencl_ref{clBuildProgram}
+    void build(const std::string &options = std::string())
     {
         const char *options_string = 0;
 
@@ -216,11 +263,68 @@ public:
         #endif
 
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
+        }
+    }
+
+    #if defined(CL_VERSION_1_2) || defined(BOOST_COMPUTE_DOXYGEN_INVOKED)
+    /// Compiles the program with \p options.
+    ///
+    /// \opencl_version_warning{1,2}
+    ///
+    /// \see_opencl_ref{clCompileProgram}
+    void compile(const std::string &options = std::string())
+    {
+        const char *options_string = 0;
+
+        if(!options.empty()){
+            options_string = options.c_str();
         }
 
-        return ret;
+        cl_int ret = clCompileProgram(
+            m_program, 0, 0, options_string, 0, 0, 0, 0, 0
+        );
+
+        if(ret != CL_SUCCESS){
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
+        }
     }
+
+    /// Links the programs in \p programs with \p options in \p context.
+    ///
+    /// \opencl_version_warning{1,2}
+    ///
+    /// \see_opencl_ref{clLinkProgram}
+    static program link(const std::vector<program> &programs,
+                        const context &context,
+                        const std::string &options = std::string())
+    {
+        const char *options_string = 0;
+
+        if(!options.empty()){
+            options_string = options.c_str();
+        }
+
+        cl_int ret;
+        cl_program program_ = clLinkProgram(
+            context.get(),
+            0,
+            0,
+            options_string,
+            static_cast<uint_>(programs.size()),
+            reinterpret_cast<const cl_program*>(&programs[0]),
+            0,
+            0,
+            &ret
+        );
+
+        if(!program_){
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
+        }
+
+        return program(program_, false);
+    }
+    #endif // CL_VERSION_1_2
 
     /// Returns the build log.
     std::string build_log() const
@@ -235,7 +339,7 @@ public:
                                            0,
                                            &size);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
 
         std::string value(size - 1, 0);
@@ -246,29 +350,31 @@ public:
                                     &value[0],
                                     0);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
 
         return value;
     }
 
     /// Creates and returns a new kernel object for \p name.
-#ifndef BOOST_COMPUTE_DOXYGEN_INVOKED
-    detail::program_create_kernel_result
-#else
-    kernel
-#endif
-    create_kernel(const std::string &name) const
-    {
-        cl_int error = 0;
-        cl_kernel kernel = clCreateKernel(m_program,
-                                          name.c_str(),
-                                          &error);
-        if(!kernel){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
-        }
+    ///
+    /// For example, to create the \c "foo" kernel (after the program has been
+    /// created and built):
+    /// \code
+    /// boost::compute::kernel foo_kernel = foo_program.create_kernel("foo");
+    /// \endcode
+    kernel create_kernel(const std::string &name) const;
 
-        return detail::program_create_kernel_result(kernel);
+    /// Returns \c true if the program is the same at \p other.
+    bool operator==(const program &other) const
+    {
+        return m_program == other.m_program;
+    }
+
+    /// Returns \c true if the program is different from \p other.
+    bool operator!=(const program &other) const
+    {
+        return m_program != other.m_program;
     }
 
     /// \internal_
@@ -292,7 +398,7 @@ public:
                                                         0,
                                                         &error);
         if(!program_){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
         }
 
         return program(program_, false);
@@ -337,7 +443,10 @@ public:
                                                         &binary_status,
                                                         &error);
         if(!program_){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
+        }
+        if(binary_status != CL_SUCCESS){
+            BOOST_THROW_EXCEPTION(opencl_error(binary_status));
         }
 
         return program(program_, false);
@@ -370,6 +479,35 @@ public:
         // create program
         return create_with_binary(&binary[0], binary.size(), context);
     }
+
+    #if defined(CL_VERSION_1_2) || defined(BOOST_COMPUTE_DOXYGEN_INVOKED)
+    /// Creates a new program with the built-in kernels listed in
+    /// \p kernel_names for \p devices in \p context.
+    ///
+    /// \opencl_version_warning{1,2}
+    ///
+    /// \see_opencl_ref{clCreateProgramWithBuiltInKernels}
+    static program create_with_builtin_kernels(const context &context,
+                                               const std::vector<device> &devices,
+                                               const std::string &kernel_names)
+    {
+        cl_int error = 0;
+
+        cl_program program_ = clCreateProgramWithBuiltInKernels(
+            context.get(),
+            static_cast<uint_>(devices.size()),
+            reinterpret_cast<const cl_device_id *>(&devices[0]),
+            kernel_names.c_str(),
+            &error
+        );
+
+        if(!program_){
+            BOOST_THROW_EXCEPTION(opencl_error(error));
+        }
+
+        return program(program_, false);
+    }
+    #endif // CL_VERSION_1_2
 
     /// Create a new program with \p source in \p context and builds it with \p options.
     /**
@@ -423,7 +561,7 @@ public:
                                                         0,
                                                         &error);
         if(!program_){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
         }
 
         program prog(program_, false);
@@ -438,10 +576,6 @@ public:
     }
 
 private:
-    BOOST_COPYABLE_AND_MOVABLE(program)
-
-    cl_program m_program;
-
 #ifdef BOOST_COMPUTE_USE_OFFLINE_CACHE
     // Path delimiter symbol for the current OS.
     static const std::string& path_delim() {
@@ -513,7 +647,27 @@ private:
     }
 #endif // BOOST_COMPUTE_USE_OFFLINE_CACHE
 
+private:
+    cl_program m_program;
 };
+
+/// \internal_ define get_info() specializations for program
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(program,
+    ((cl_uint, CL_PROGRAM_REFERENCE_COUNT))
+    ((cl_context, CL_PROGRAM_CONTEXT))
+    ((cl_uint, CL_PROGRAM_NUM_DEVICES))
+    ((std::vector<cl_device_id>, CL_PROGRAM_DEVICES))
+    ((std::string, CL_PROGRAM_SOURCE))
+    ((std::vector<size_t>, CL_PROGRAM_BINARY_SIZES))
+    ((std::vector<unsigned char *>, CL_PROGRAM_BINARIES))
+)
+
+#ifdef CL_VERSION_1_2
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(program,
+    ((size_t, CL_PROGRAM_NUM_KERNELS))
+    ((std::string, CL_PROGRAM_KERNEL_NAMES))
+)
+#endif // CL_VERSION_1_2
 
 } // end compute namespace
 } // end boost namespace

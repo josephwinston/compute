@@ -13,10 +13,11 @@
 
 #include <boost/compute/system.hpp>
 #include <boost/compute/function.hpp>
-#include <boost/compute/algorithm/copy.hpp>
 #include <boost/compute/algorithm/accumulate.hpp>
-#include <boost/compute/algorithm/transform.hpp>
+#include <boost/compute/algorithm/copy.hpp>
+#include <boost/compute/algorithm/generate.hpp>
 #include <boost/compute/algorithm/sort.hpp>
+#include <boost/compute/algorithm/transform.hpp>
 #include <boost/compute/container/vector.hpp>
 #include <boost/compute/iterator/zip_iterator.hpp>
 #include <boost/compute/types/pair.hpp>
@@ -28,9 +29,9 @@ namespace compute = boost::compute;
 
 BOOST_AUTO_TEST_CASE(add_three)
 {
-    BOOST_COMPUTE_FUNCTION(int, add_three, (int),
+    BOOST_COMPUTE_FUNCTION(int, add_three, (int x),
     {
-        return _1 + 3;
+        return x + 3;
     });
 
     int data[] = { 1, 2, 3, 4 };
@@ -44,13 +45,13 @@ BOOST_AUTO_TEST_CASE(add_three)
 
 BOOST_AUTO_TEST_CASE(sum_odd_values)
 {
-    BOOST_COMPUTE_FUNCTION(int, add_odd_value, (int, int),
+    BOOST_COMPUTE_FUNCTION(int, add_odd_value, (int sum, int value),
     {
-        if(_2 & 1){
-            return _1 + _2;
+        if(value & 1){
+            return sum + value;
         }
         else {
-            return _1 + 0;
+            return sum + 0;
         }
     });
 
@@ -74,9 +75,9 @@ BOOST_AUTO_TEST_CASE(sort_pairs)
     compute::copy(data.begin(), data.end(), vector.begin(), queue);
 
     // sort by first component
-    BOOST_COMPUTE_FUNCTION(bool, compare_first, (std::pair<int, float>, std::pair<int, float>),
+    BOOST_COMPUTE_FUNCTION(bool, compare_first, (std::pair<int, float> a, std::pair<int, float> b),
     {
-        return _1.first < _2.first;
+        return a.first < b.first;
     });
 
     compute::sort(vector.begin(), vector.end(), compare_first, queue);
@@ -86,9 +87,9 @@ BOOST_AUTO_TEST_CASE(sort_pairs)
     BOOST_CHECK(data[2] == std::make_pair(2, 1.0f));
 
     // sort by second component
-    BOOST_COMPUTE_FUNCTION(bool, compare_second, (std::pair<int, float>, std::pair<int, float>),
+    BOOST_COMPUTE_FUNCTION(bool, compare_second, (std::pair<int, float> a, std::pair<int, float> b),
     {
-        return _1.second < _2.second;
+        return a.second < b.second;
     });
 
     compute::sort(vector.begin(), vector.end(), compare_second, queue);
@@ -108,9 +109,9 @@ BOOST_AUTO_TEST_CASE(transform_zip_iterator)
 
     compute::vector<float> results(4, context);
 
-    BOOST_COMPUTE_FUNCTION(float, tuple_pown, (boost::tuple<float, int>),
+    BOOST_COMPUTE_FUNCTION(float, tuple_pown, (boost::tuple<float, int> x),
     {
-        return pown(boost_tuple_get(_1, 0), boost_tuple_get(_1, 1));
+        return pown(boost_tuple_get(x, 0), boost_tuple_get(x, 1));
     });
 
     compute::transform(
@@ -131,6 +132,71 @@ BOOST_AUTO_TEST_CASE(transform_zip_iterator)
     BOOST_CHECK_CLOSE(results_data[1], 16.f, 1e-4);
     BOOST_CHECK_CLOSE(results_data[2], 729.f, 1e-4);
     BOOST_CHECK_CLOSE(results_data[3], 65536.f, 1e-4);
+}
+
+static BOOST_COMPUTE_FUNCTION(int, static_function, (int x),
+{
+    return x + 5;
+});
+
+BOOST_AUTO_TEST_CASE(test_static_function)
+{
+    int data[] = { 1, 2, 3, 4};
+    compute::vector<int> vec(data, data + 4, queue);
+
+    compute::transform(
+        vec.begin(), vec.end(), vec.begin(), static_function, queue
+    );
+    CHECK_RANGE_EQUAL(int, 4, vec, (6, 7, 8, 9));
+}
+
+template<class T>
+inline compute::function<T(T)> make_negate_function()
+{
+    BOOST_COMPUTE_FUNCTION(T, negate, (const T x),
+    {
+        return -x;
+    });
+
+    return negate;
+}
+
+BOOST_AUTO_TEST_CASE(test_templated_function)
+{
+    int int_data[] = { 1, 2, 3, 4 };
+    compute::vector<int> int_vec(int_data, int_data + 4, queue);
+
+    compute::function<int(int)> negate_int = make_negate_function<int>();
+    compute::transform(
+        int_vec.begin(), int_vec.end(), int_vec.begin(), negate_int, queue
+    );
+    CHECK_RANGE_EQUAL(int, 4, int_vec, (-1, -2, -3, -4));
+
+    float float_data[] = { 1.1f, 2.2f, 3.3f, 4.4f };
+    compute::vector<float> float_vec(float_data, float_data + 4, queue);
+
+    compute::function<float(float)> negate_float = make_negate_function<float>();
+    compute::transform(
+        float_vec.begin(), float_vec.end(), float_vec.begin(), negate_float, queue
+    );
+    CHECK_RANGE_EQUAL(float, 4, float_vec, (-1.1f, -2.2f, -3.3f, -4.4f));
+}
+
+BOOST_AUTO_TEST_CASE(define)
+{
+    BOOST_COMPUTE_FUNCTION(int, return_number, (),
+    {
+        return NUMBER;
+    });
+    return_number.define("NUMBER", "4");
+
+    compute::vector<int> vec(1, context);
+    compute::generate(vec.begin(), vec.end(), return_number, queue);
+    CHECK_RANGE_EQUAL(int, 1, vec, (4));
+
+    return_number.define("NUMBER", "2");
+    compute::generate(vec.begin(), vec.end(), return_number, queue);
+    CHECK_RANGE_EQUAL(int, 1, vec, (2));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

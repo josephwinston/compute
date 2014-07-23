@@ -30,12 +30,12 @@
 #include <boost/compute/image3d.hpp>
 #include <boost/compute/closure.hpp>
 #include <boost/compute/function.hpp>
-#include <boost/compute/device_ptr.hpp>
 #include <boost/compute/functional.hpp>
 #include <boost/compute/type_traits.hpp>
 #include <boost/compute/command_queue.hpp>
 #include <boost/compute/image_sampler.hpp>
 #include <boost/compute/memory_object.hpp>
+#include <boost/compute/detail/device_ptr.hpp>
 #include <boost/compute/detail/program_cache.hpp>
 #include <boost/compute/detail/sha1.hpp>
 
@@ -330,7 +330,7 @@ public:
         return stream.str();
     }
 
-    kernel compile(const context &context)
+    kernel compile(const context &context, const std::string &options = std::string())
     {
         // generate the program source
         std::string source = this->source();
@@ -344,8 +344,9 @@ public:
 
         // build the program if it was not in the cache
         if(!program.get()){
-            program =
-                ::boost::compute::program::build_with_source(source, context);
+            program = ::boost::compute::program::build_with_source(
+                source, context, options
+            );
 
             cache->insert(cache_key, program);
         }
@@ -650,7 +651,8 @@ public:
         return queue.enqueue_1d_range_kernel(
                    kernel,
                    global_work_offset,
-                   global_work_size
+                   global_work_size,
+                   0
                );
     }
 
@@ -721,7 +723,7 @@ public:
     }
 
     template<class Expr>
-    static std::string _expr_to_string(const Expr &expr)
+    static std::string expr_to_string(const Expr &expr)
     {
         meta_kernel tmp((std::string()));
         tmp << expr;
@@ -757,6 +759,33 @@ public:
 
         m_external_function_names.insert(name);
         m_external_function_source << source << "\n";
+    }
+
+    void add_function(const std::string &name,
+                      const std::string &source,
+                      const std::map<std::string, std::string> &definitions)
+    {
+        typedef std::map<std::string, std::string>::const_iterator iter;
+
+        std::stringstream s;
+
+        // add #define's
+        for(iter i = definitions.begin(); i != definitions.end(); i++){
+            s << "#define " << i->first;
+            if(!i->second.empty()){
+                s << " " << i->second;
+            }
+            s << "\n";
+        }
+
+        s << source << "\n";
+
+        // add #undef's
+        for(iter i = definitions.begin(); i != definitions.end(); i++){
+            s << "#undef " << i->first << "\n";
+        }
+
+        add_function(name, s.str());
     }
 
     template<class Type>
@@ -843,7 +872,7 @@ inline meta_kernel&
 operator<<(meta_kernel &kernel, const invoked_function<ResultType, ArgTuple> &expr)
 {
     if(!expr.source().empty()){
-        kernel.add_function(expr.name(), expr.source());
+        kernel.add_function(expr.name(), expr.source(), expr.definitions());
     }
 
     kernel.insert_function_call(expr.name(), expr.args());
@@ -851,13 +880,13 @@ operator<<(meta_kernel &kernel, const invoked_function<ResultType, ArgTuple> &ex
     return kernel;
 }
 
-template<class ResultType, class Arg1, class CaptureTuple>
+template<class ResultType, class ArgTuple, class CaptureTuple>
 inline meta_kernel&
 operator<<(meta_kernel &kernel,
-           const invoked_closure<ResultType, boost::tuple<Arg1>, CaptureTuple> &expr)
+           const invoked_closure<ResultType, ArgTuple, CaptureTuple> &expr)
 {
     if(!expr.source().empty()){
-        kernel.add_function(expr.name(), expr.source());
+        kernel.add_function(expr.name(), expr.source(), expr.definitions());
     }
 
     kernel << expr.name() << '(';
@@ -882,7 +911,7 @@ inline meta_kernel& operator<<(meta_kernel &kernel,
 
 template<class T, class IndexExpr>
 inline meta_kernel& operator<<(meta_kernel &kernel,
-                               const device_ptr_index_expr<T, IndexExpr> &expr)
+                               const detail::device_ptr_index_expr<T, IndexExpr> &expr)
 {
     if(expr.m_index == 0){
         return kernel <<
@@ -898,7 +927,7 @@ inline meta_kernel& operator<<(meta_kernel &kernel,
 
 template<class T1, class T2, class IndexExpr>
 inline meta_kernel& operator<<(meta_kernel &kernel,
-                               const device_ptr_index_expr<std::pair<T1, T2>, IndexExpr> &expr)
+                               const detail::device_ptr_index_expr<std::pair<T1, T2>, IndexExpr> &expr)
 {
     typedef std::pair<T1, T2> T;
 

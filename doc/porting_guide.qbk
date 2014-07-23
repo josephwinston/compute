@@ -1,6 +1,6 @@
 [section Porting Guide]
 
-[section OpenCL C API]
+[section OpenCL API]
 
 [table OpenCL API Translation Table
     [[OpenCL Function] [Boost.Compute Function]]
@@ -36,6 +36,8 @@
     [[`clGetEventInfo()`] [[memberref boost::compute::event::get_info event::get_info<T>()]]]
     [[`clGetEventProfilingInfo()`] [[memberref boost::compute::event::get_profiling_info event::get_profiling_info<T>()]]]
     [[`clWaitForEvents()`] [[memberref boost::compute::wait_list::wait() wait_list::wait()]]]
+    [[`clCreateUserEvent()`] [[classref boost::compute::user_event user_event::user_event()]]]
+    [[`clSetUserEventStatus()`] [[memberref boost::compute::user_event::set_status() user_event::set_status()]]]
 
     [[*Kernels*]]
     [[`clCreateKernel()`] [[classref boost::compute::kernel kernel::kernel()]]]
@@ -54,9 +56,12 @@
     [[*Programs*]]
     [[`clCreateProgramWithSource()`] [[memberref boost::compute::program::create_with_source program::create_with_source()]]]
     [[`clCreateProgramWithBinary()`] [[memberref boost::compute::program::create_with_binary program::create_with_binary()]]]
+    [[`clCreateProgramWithBuiltInKernels()`] [[memberref boost::compute::program::create_with_builtin_kernels program::create_with_builtin_kernels()]]]
     [[`clReleaseProgram()`] [[classref boost::compute::program program::~program()]]]
     [[`clGetProgramInfo()`] [[memberref boost::compute::program::get_info program::get_info<T>()]]]
     [[`clBuildProgram()`] [[memberref boost::compute::program::build program::build()]]]
+    [[`clCompileProgram()`] [[memberref boost::compute::program::compile program::compile()]]]
+    [[`clLinkProgram()`] [[memberref boost::compute::program::link program::link()]]]
 
     [[*System*]]
     [[`clGetPlatformIDs()`] [[memberref boost::compute::system::platforms system::platforms()]]]
@@ -70,6 +75,6 @@
     [[`clEnqueueReleaseGLObjects()`] [[funcref boost::compute::opengl_enqueue_release_gl_objects opengl_enqueue_release_gl_objects()]]]
 ]
 
-[endsect] [/ opencl c api]
+[endsect] [/ opencl api]
 
 [endsect]

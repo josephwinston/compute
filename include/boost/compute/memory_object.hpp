@@ -11,9 +11,7 @@
 #ifndef BOOST_COMPUTE_MEMORY_OBJECT_HPP
 #define BOOST_COMPUTE_MEMORY_OBJECT_HPP
 
-#include <boost/move/move.hpp>
-
-#include <boost/compute/cl.hpp>
+#include <boost/compute/config.hpp>
 #include <boost/compute/context.hpp>
 #include <boost/compute/kernel.hpp>
 #include <boost/compute/detail/get_object_info.hpp>
@@ -40,6 +38,12 @@ public:
         use_host_ptr = CL_MEM_USE_HOST_PTR,
         alloc_host_ptr = CL_MEM_ALLOC_HOST_PTR,
         copy_host_ptr = CL_MEM_COPY_HOST_PTR
+        #ifdef CL_VERSION_1_2
+        ,
+        host_write_only = CL_MEM_HOST_WRITE_ONLY,
+        host_read_only = CL_MEM_HOST_READ_ONLY,
+        host_no_access = CL_MEM_HOST_NO_ACCESS
+        #endif
     };
 
     /// Returns the underlying OpenCL memory object.
@@ -93,6 +97,25 @@ public:
         return detail::get_object_info<T>(clGetMemObjectInfo, m_mem, info);
     }
 
+    #if defined(CL_VERSION_1_1) || defined(BOOST_COMPUTE_DOXYGEN_INVOKED)
+    /// Registers a function to be called when the memory object is deleted
+    /// and its resources freed.
+    ///
+    /// \see_opencl_ref{clSetMemObjectDestructorCallback}
+    ///
+    /// \opencl_version_warning{1,1}
+    void set_destructor_callback(void (BOOST_COMPUTE_CL_CALLBACK *callback)(
+                                     cl_mem memobj, void *user_data
+                                 ),
+                                 void *user_data = 0)
+    {
+        cl_int ret = clSetMemObjectDestructorCallback(m_mem, callback, user_data);
+        if(ret != CL_SUCCESS){
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
+        }
+    }
+    #endif // CL_VERSION_1_1
+
     /// Returns \c true if the memory object is the same as \p other.
     bool operator==(const memory_object &other) const
     {
@@ -131,13 +154,6 @@ protected:
     }
 
     /// \internal_
-    memory_object(BOOST_RV_REF(memory_object) other)
-        : m_mem(other.m_mem)
-    {
-        other.m_mem = 0;
-    }
-
-    /// \internal_
     memory_object& operator=(const memory_object &other)
     {
         if(this != &other){
@@ -155,20 +171,27 @@ protected:
         return *this;
     }
 
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
     /// \internal_
-    memory_object& operator=(BOOST_RV_REF(memory_object) other)
+    memory_object(memory_object&& other) BOOST_NOEXCEPT
+        : m_mem(other.m_mem)
     {
-        if(this != &other){
-            if(m_mem){
-                clReleaseMemObject(m_mem);
-            }
+        other.m_mem = 0;
+    }
 
-            m_mem = other.m_mem;
-            other.m_mem = 0;
+    /// \internal_
+    memory_object& operator=(memory_object&& other) BOOST_NOEXCEPT
+    {
+        if(m_mem){
+            clReleaseMemObject(m_mem);
         }
+
+        m_mem = other.m_mem;
+        other.m_mem = 0;
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// \internal_
     ~memory_object()
@@ -179,9 +202,6 @@ protected:
             );
         }
     }
-
-private:
-    BOOST_COPYABLE_AND_MOVABLE(memory_object)
 
 protected:
     cl_mem m_mem;

@@ -11,19 +11,45 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 set(BENCHMARKS
   accumulate
+  bernoulli_distribution
   cart_to_polar
+  copy_if
   copy_to_device
   count
+  discrete_distribution
+  erase_remove
+  fill
+  find_end
+  includes
   inner_product
+  is_permutation
+  linear_congruential_engine
   merge
   mersenne_twister
+  next_permutation
   partial_sum
+  partition
+  partition_point
+  prev_permutation
   reverse
+  rotate
+  rotate_copy
   host_sort
   saxpy
+  search
+  search_n
+  set_difference
+  set_intersection
+  set_symmetric_difference
+  set_union
   sort
   sort_by_key
   sort_float
+  stable_partition
+  uniform_int_distribution
+  unique
+  unique_copy
+  exclusive_scan
 )
 
 foreach(BENCHMARK ${BENCHMARKS})
@@ -36,13 +62,38 @@ endforeach()
 set(STL_BENCHMARKS
   stl_accumulate
   stl_count
+  stl_find_end
+  stl_includes
   stl_inner_product
   stl_merge
+  stl_next_permutation
   stl_partial_sum
+  stl_partition
+  stl_prev_permutation
   stl_reverse
+  stl_rotate
+  stl_rotate_copy
   stl_saxpy
+  stl_search
+  stl_search_n
+  stl_set_difference
+  stl_set_intersection
+  stl_set_symmetric_difference
+  stl_set_union
   stl_sort
+  stl_stable_partition
+  stl_unique
+  stl_unique_copy
 )
+
+# stl benchmarks which rerquire c++11
+if(${BOOST_COMPUTE_USE_CPP11})
+  list(APPEND
+    STL_BENCHMARKS
+    stl_is_permutation
+    stl_partition_point
+  )
+endif()
 
 foreach(BENCHMARK ${STL_BENCHMARKS})
   set(PERF_TARGET perf_${BENCHMARK})
@@ -61,6 +112,7 @@ if(${BOOST_COMPUTE_HAVE_CUDA})
     thrust_partial_sum
     thrust_saxpy
     thrust_sort
+    thrust_exclusive_scan
   )
 
   foreach(BENCHMARK ${CUDA_BENCHMARKS})

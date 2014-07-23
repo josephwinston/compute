@@ -71,16 +71,67 @@ BOOST_AUTO_TEST_CASE(reference_count)
     BOOST_CHECK_GE(buf.reference_count(), uint_(1));
 }
 
+BOOST_AUTO_TEST_CASE(get_size)
+{
+    boost::compute::buffer buf(context, 16);
+    BOOST_CHECK_EQUAL(buf.size(), size_t(16));
+    BOOST_CHECK_EQUAL(buf.get_info<CL_MEM_SIZE>(), size_t(16));
+    BOOST_CHECK_EQUAL(buf.get_info<size_t>(CL_MEM_SIZE), size_t(16));
+}
+
+#ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
 BOOST_AUTO_TEST_CASE(move_constructor)
 {
     boost::compute::buffer buffer1(context, 16);
     BOOST_CHECK(buffer1.get() != 0);
     BOOST_CHECK_EQUAL(buffer1.size(), size_t(16));
 
-    boost::compute::buffer buffer2(boost::move(buffer1));
+    boost::compute::buffer buffer2(std::move(buffer1));
     BOOST_CHECK(buffer1.get() == 0);
     BOOST_CHECK(buffer2.get() != 0);
     BOOST_CHECK_EQUAL(buffer2.size(), size_t(16));
+}
+#endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
+
+BOOST_AUTO_TEST_CASE(clone_buffer)
+{
+    boost::compute::buffer buffer1(context, 16);
+    boost::compute::buffer buffer2 = buffer1.clone(queue);
+    BOOST_CHECK(buffer1.get() != buffer2.get());
+    BOOST_CHECK_EQUAL(buffer1.size(), buffer2.size());
+}
+
+#ifdef CL_VERSION_1_1
+static void BOOST_COMPUTE_CL_CALLBACK
+destructor_callback_function(cl_mem memobj, void *user_data)
+{
+    (void) memobj;
+
+    bool *flag = static_cast<bool *>(user_data);
+
+    *flag = true;
+}
+
+BOOST_AUTO_TEST_CASE(destructor_callback)
+{
+    REQUIRES_OPENCL_VERSION(1,2);
+
+    bool invoked = false;
+    {
+        boost::compute::buffer buf(context, 128);
+        buf.set_destructor_callback(destructor_callback_function, &invoked);
+    }
+    BOOST_CHECK(invoked == true);
+}
+#endif // CL_VERSION_1_1
+
+BOOST_AUTO_TEST_CASE(create_buffer_doctest)
+{
+//! [constructor]
+boost::compute::buffer buf(context, 32 * sizeof(float));
+//! [constructor]
+
+    BOOST_CHECK_EQUAL(buf.size(), 32 * sizeof(float));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

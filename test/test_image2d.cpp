@@ -21,9 +21,12 @@
 #include "context_setup.hpp"
 
 namespace bc = boost::compute;
+namespace compute = boost::compute;
 
 BOOST_AUTO_TEST_CASE(image2d_get_supported_formats)
 {
+    REQUIRES_OPENCL_VERSION(1,2);
+
     std::vector<bc::image_format> formats =
         bc::image2d::get_supported_formats(context, bc::image2d::read_only);
     BOOST_CHECK(!formats.empty());
@@ -31,6 +34,8 @@ BOOST_AUTO_TEST_CASE(image2d_get_supported_formats)
 
 BOOST_AUTO_TEST_CASE(get_info)
 {
+    REQUIRES_OPENCL_VERSION(1,2);
+
     bc::image2d image(
         context,
         bc::image2d::read_only,
@@ -57,8 +62,46 @@ BOOST_AUTO_TEST_CASE(get_info)
                     bc::image_format::rgba, bc::image_format::unorm_int8));
 }
 
+BOOST_AUTO_TEST_CASE(clone_image)
+{
+    REQUIRES_OPENCL_VERSION(1,2);
+
+    // image data
+    unsigned int data[] = { 0x0000ffff, 0xff00ffff,
+                            0x00ff00ff, 0xffffffff };
+
+    // create image on the device
+    compute::image2d image(
+        context,
+        CL_MEM_READ_WRITE,
+        compute::image_format(CL_RGBA, CL_UNORM_INT8),
+        2,
+        2
+    );
+
+    // copy image data to the device
+    size_t origin[2] = { 0, 0 };
+    size_t region[2] = { 2, 2 };
+    queue.enqueue_write_image(image, origin, region, 0, data);
+
+    // clone image
+    compute::image2d copy = image.clone(queue);
+
+    // read cloned image data back to the host
+    unsigned int cloned_data[4];
+    queue.enqueue_read_image(copy, origin, region, 0, cloned_data);
+
+    // ensure original data and cloned data are the same
+    BOOST_CHECK_EQUAL(cloned_data[0], data[0]);
+    BOOST_CHECK_EQUAL(cloned_data[1], data[1]);
+    BOOST_CHECK_EQUAL(cloned_data[2], data[2]);
+    BOOST_CHECK_EQUAL(cloned_data[3], data[3]);
+}
+
 BOOST_AUTO_TEST_CASE(count_with_pixel_iterator)
 {
+    REQUIRES_OPENCL_VERSION(1,2);
+
     if(is_pocl_device(device)){
         std::cerr << "skipping count_with_pixel_iterator test" << std::endl;
         return;
@@ -110,6 +153,8 @@ BOOST_AUTO_TEST_CASE(count_with_pixel_iterator)
 
 BOOST_AUTO_TEST_CASE(find_with_pixel_iterator)
 {
+    REQUIRES_OPENCL_VERSION(1,2);
+
     if(is_pocl_device(device)){
         std::cerr << "skipping find_with_pixel_iterator test" << std::endl;
         return;

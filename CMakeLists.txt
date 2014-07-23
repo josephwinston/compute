@@ -12,6 +12,12 @@ include_directories(SYSTEM ${OPENCL_INCLUDE_DIRS})
 find_package(Boost 1.48 REQUIRED)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
+# optional support for c++11
+option(BOOST_COMPUTE_USE_CPP11 "Use C++11 features" OFF)
+if(${BOOST_COMPUTE_USE_CPP11})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+endif()
+
 # optional third-party libraries
 option(BOOST_COMPUTE_HAVE_EIGEN "Have Eigen" OFF)
 option(BOOST_COMPUTE_HAVE_OPENCV "Have OpenCV" OFF)
@@ -54,3 +60,19 @@ option(BOOST_COMPUTE_USE_OFFLINE_CACHE "Use offline cache for OpenCL program bin
 if(${BOOST_COMPUTE_USE_OFFLINE_CACHE})
     add_definitions(-DBOOST_COMPUTE_USE_OFFLINE_CACHE)
 endif()
+
+# configure cmake config file
+configure_file(
+  cmake/BoostComputeConfig.cmake.in
+  ${BoostCompute_BINARY_DIR}/BoostComputeConfig.cmake
+  @ONLY
+)
+
+# install cmake config file
+install(
+  FILES ${BoostCompute_BINARY_DIR}/BoostComputeConfig.cmake
+  DESTINATION share/cmake/BoostCompute
+)
+
+# install header files
+install(DIRECTORY include/boost DESTINATION include/compute)

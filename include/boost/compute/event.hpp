@@ -11,13 +11,14 @@
 #ifndef BOOST_COMPUTE_EVENT_HPP
 #define BOOST_COMPUTE_EVENT_HPP
 
-#include <boost/move/move.hpp>
+#include <boost/function.hpp>
 
-#include <boost/compute/cl.hpp>
 #include <boost/compute/config.hpp>
 #include <boost/compute/exception.hpp>
+#include <boost/compute/detail/duration.hpp>
 #include <boost/compute/detail/get_object_info.hpp>
 #include <boost/compute/detail/assert_cl_success.hpp>
+#include <boost/compute/types/builtin.hpp>
 
 namespace boost {
 namespace compute {
@@ -84,6 +85,7 @@ public:
         }
     }
 
+    /// Makes a new event as a copy of \p other.
     event(const event &other)
         : m_event(other.m_event)
     {
@@ -92,12 +94,7 @@ public:
         }
     }
 
-    event(BOOST_RV_REF(event) other)
-        : m_event(other.m_event)
-    {
-        other.m_event = 0;
-    }
-
+    /// Copies the event object from \p other to \c *this.
     event& operator=(const event &other)
     {
         if(this != &other){
@@ -115,19 +112,27 @@ public:
         return *this;
     }
 
-    event& operator=(BOOST_RV_REF(event) other)
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new event object from \p other.
+    event(event&& other) BOOST_NOEXCEPT
+        : m_event(other.m_event)
     {
-        if(this != &other){
-            if(m_event){
-                clReleaseEvent(m_event);
-            }
+        other.m_event = 0;
+    }
 
-            m_event = other.m_event;
-            other.m_event = 0;
+    /// Move-assigns the event from \p other to \c *this.
+    event& operator=(event&& other) BOOST_NOEXCEPT
+    {
+        if(m_event){
+            clReleaseEvent(m_event);
         }
+
+        m_event = other.m_event;
+        other.m_event = 0;
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// Destroys the event object.
     ~event()
@@ -146,7 +151,7 @@ public:
     }
 
     /// Returns the status of the event.
-    cl_int get_status() const
+    cl_int status() const
     {
         return get_info<cl_int>(CL_EVENT_COMMAND_EXECUTION_STATUS);
     }
@@ -166,7 +171,14 @@ public:
         return detail::get_object_info<T>(clGetEventInfo, m_event, info);
     }
 
+    /// \overload
+    template<int Enum>
+    typename detail::get_object_info_type<event, Enum>::type
+    get_info() const;
+
     /// Returns profiling information for the event.
+    ///
+    /// \see event::duration()
     ///
     /// \see_opencl_ref{clGetEventProfilingInfo}
     template<class T>
@@ -183,7 +195,7 @@ public:
     {
         cl_int ret = clWaitForEvents(1, &m_event);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
     }
 
@@ -203,10 +215,46 @@ public:
     {
         cl_int ret = clSetEventCallback(m_event, status, callback, user_data);
         if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(runtime_exception(ret));
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
         }
     }
+
+    /// Registers a generic function to be called when the event status
+    /// changes to \p status (by default \c CL_COMPLETE).
+    ///
+    /// The function specified by \p callback must be invokable with zero
+    /// arguments (e.g. \c callback()).
+    ///
+    /// \opencl_version_warning{1,1}
+    template<class Function>
+    void set_callback(Function callback, cl_int status = CL_COMPLETE)
+    {
+        set_callback(
+            event_callback_invoker,
+            status,
+            new boost::function<void()>(callback)
+        );
+    }
     #endif // CL_VERSION_1_1
+
+    /// Returns the total duration of the event from \p start to \p end.
+    ///
+    /// For example, to print the number of milliseconds the event took to
+    /// execute:
+    /// \code
+    /// std::cout << event.duration<std::chrono::milliseconds>().count() << " ms" << std::endl;
+    /// \endcode
+    ///
+    /// \see event::get_profiling_info()
+    template<class Duration>
+    Duration duration(cl_profiling_info start = CL_PROFILING_COMMAND_START,
+                      cl_profiling_info end = CL_PROFILING_COMMAND_END) const
+    {
+        const ulong_ nanoseconds =
+            get_profiling_info<ulong_>(end) - get_profiling_info<ulong_>(start);
+
+        return detail::make_duration_from_nanoseconds(Duration(), nanoseconds);
+    }
 
     /// Returns \c true if the event is the same as \p other.
     bool operator==(const event &other) const
@@ -226,11 +274,44 @@ public:
         return m_event;
     }
 
-private:
-    BOOST_COPYABLE_AND_MOVABLE(event)
+    /// \internal_ (deprecated)
+    cl_int get_status() const
+    {
+        return status();
+    }
 
+private:
+    #ifdef CL_VERSION_1_1
+    /// \internal_
+    static void BOOST_COMPUTE_CL_CALLBACK
+    event_callback_invoker(cl_event, cl_int, void *user_data)
+    {
+        boost::function<void()> *callback =
+            static_cast<boost::function<void()> *>(user_data);
+
+        (*callback)();
+
+        delete callback;
+    }
+    #endif // CL_VERSION_1_1
+
+protected:
     cl_event m_event;
 };
+
+/// \internal_ define get_info() specializations for event
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(event,
+    ((cl_command_queue, CL_EVENT_COMMAND_QUEUE))
+    ((cl_command_type, CL_EVENT_COMMAND_TYPE))
+    ((cl_int, CL_EVENT_COMMAND_EXECUTION_STATUS))
+    ((cl_uint, CL_EVENT_REFERENCE_COUNT))
+)
+
+#ifdef CL_VERSION_1_1
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(event,
+    ((cl_context, CL_EVENT_CONTEXT))
+)
+#endif
 
 } // end compute namespace
 } // end boost namespace

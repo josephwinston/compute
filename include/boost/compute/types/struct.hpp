@@ -13,8 +13,12 @@
 
 #include <sstream>
 
+#include <boost/static_assert.hpp>
+
 #include <boost/preprocessor/stringize.hpp>
 #include <boost/preprocessor/seq/for_each.hpp>
+#include <boost/preprocessor/seq/fold_left.hpp>
+#include <boost/preprocessor/seq/transform.hpp>
 
 #include <boost/compute/type_traits/type_name.hpp>
 #include <boost/compute/detail/meta_kernel.hpp>
@@ -25,7 +29,7 @@ namespace compute {
 namespace detail {
 
 template<class Struct, class T>
-inline std::string adapt_struct_insert_member(T Struct::* member, const char *name)
+inline std::string adapt_struct_insert_member(T Struct::*, const char *name)
 {
     std::stringstream s;
     s << "    " << type_name<T>() << " " << name << ";\n";
@@ -41,6 +45,30 @@ inline std::string adapt_struct_insert_member(T Struct::* member, const char *na
     << ::boost::compute::detail::adapt_struct_insert_member( \
            &type::member, BOOST_PP_STRINGIZE(member) \
        )
+
+/// \internal_
+#define BOOST_COMPUTE_DETAIL_STRUCT_MEMBER_SIZE(s, struct_, member_) \
+    sizeof(((struct_ *)0)->member_)
+
+/// \internal_
+#define BOOST_COMPUTE_DETAIL_STRUCT_MEMBER_SIZE_ADD(s, x, y) (x+y)
+
+/// \internal_
+#define BOOST_COMPUTE_DETAIL_STRUCT_MEMBER_SIZE_SUM(struct_, members_) \
+    BOOST_PP_SEQ_FOLD_LEFT( \
+        BOOST_COMPUTE_DETAIL_STRUCT_MEMBER_SIZE_ADD, \
+        0, \
+        BOOST_PP_SEQ_TRANSFORM( \
+            BOOST_COMPUTE_DETAIL_STRUCT_MEMBER_SIZE, struct_, members_ \
+        ) \
+    )
+
+/// \internal_
+///
+/// Returns true if struct_ contains no internal padding bytes (i.e. it is
+/// packed). members_ is a sequence of the names of the struct members.
+#define BOOST_COMPUTE_DETAIL_STRUCT_IS_PACKED(struct_, members_) \
+    (sizeof(struct_) == BOOST_COMPUTE_DETAIL_STRUCT_MEMBER_SIZE_SUM(struct_, members_))
 
 /// The BOOST_COMPUTE_ADAPT_STRUCT() macro makes a C++ struct/class available
 /// to OpenCL kernels.
@@ -70,9 +98,9 @@ inline std::string adapt_struct_insert_member(T Struct::* member, const char *na
 /// boost::compute::vector<Particle> particles = ...
 ///
 /// // function to compare particles by their x-coordinate
-/// BOOST_COMPUTE_FUNCTION(bool, sort_by_x, (Particle, Particle),
+/// BOOST_COMPUTE_FUNCTION(bool, sort_by_x, (Particle a, Particle b),
 /// {
-///     return _1.x < _2.x;
+///     return a.x < b.x;
 /// });
 ///
 /// // sort particles by their x-coordinate
@@ -80,7 +108,17 @@ inline std::string adapt_struct_insert_member(T Struct::* member, const char *na
 ///     particles.begin(), particles.end(), sort_by_x, queue
 /// );
 /// \endcode
+///
+/// Due to differences in struct padding between the host compiler and the
+/// device compiler, the \c BOOST_COMPUTE_ADAPT_STRUCT() macro requires that
+/// the adapted struct is packed (i.e. no padding bytes between members).
+///
+/// \see type_name()
 #define BOOST_COMPUTE_ADAPT_STRUCT(type, name, members) \
+    BOOST_STATIC_ASSERT_MSG( \
+        BOOST_COMPUTE_DETAIL_STRUCT_IS_PACKED(type, BOOST_COMPUTE_PP_TUPLE_TO_SEQ(members)), \
+        "BOOST_COMPUTE_ADAPT_STRUCT() does not support structs with internal padding." \
+    ); \
     BOOST_COMPUTE_TYPE_NAME(type, name) \
     namespace boost { namespace compute { namespace detail { \
     template<> \
@@ -89,7 +127,7 @@ inline std::string adapt_struct_insert_member(T Struct::* member, const char *na
         void operator()(meta_kernel &kernel) \
         { \
             std::stringstream declaration; \
-            declaration << "typedef struct {\n" \
+            declaration << "typedef struct __attribute__((packed)) {\n" \
                         BOOST_PP_SEQ_FOR_EACH( \
                             BOOST_COMPUTE_DETAIL_ADAPT_STRUCT_INSERT_MEMBER, \
                             type, \

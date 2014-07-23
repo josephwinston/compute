@@ -11,10 +11,8 @@
 #ifndef BOOST_COMPUTE_CONTEXT_HPP
 #define BOOST_COMPUTE_CONTEXT_HPP
 
-#include <boost/move/move.hpp>
 #include <boost/throw_exception.hpp>
 
-#include <boost/compute/cl.hpp>
 #include <boost/compute/config.hpp>
 #include <boost/compute/device.hpp>
 #include <boost/compute/exception/context_error.hpp>
@@ -27,6 +25,22 @@ namespace compute {
 /// \brief A compute context.
 ///
 /// The context class represents a compute context.
+///
+/// A context object manages a set of OpenCL resources including memory
+/// buffers and program objects. Before allocating memory on the device or
+/// executing kernels you must set up a context object.
+///
+/// To create a context for the default device on the system:
+/// \code
+/// // get the default compute device
+/// boost::compute::device gpu = boost::compute::system::default_device();
+///
+/// // create a context for the device
+/// boost::compute::context context(gpu);
+/// \endcode
+///
+/// Once a context is created, memory can be allocated using the buffer class
+/// and kernels can be executed using the command_queue class.
 ///
 /// \see device, command_queue
 class context
@@ -56,7 +70,7 @@ public:
                                     static_cast<void *>(this),
                                     &error);
         if(!m_context){
-            BOOST_THROW_EXCEPTION(runtime_exception(error));
+            BOOST_THROW_EXCEPTION(opencl_error(error));
         }
     }
 
@@ -79,12 +93,6 @@ public:
         }
     }
 
-    context(BOOST_RV_REF(context) other)
-        : m_context(other.m_context)
-    {
-        other.m_context = 0;
-    }
-
     context& operator=(const context &other)
     {
         if(this != &other){
@@ -102,19 +110,27 @@ public:
         return *this;
     }
 
-    context& operator=(BOOST_RV_REF(context) other)
+    #ifndef BOOST_COMPUTE_NO_RVALUE_REFERENCES
+    /// Move-constructs a new context object from \p other.
+    context(context&& other) BOOST_NOEXCEPT
+        : m_context(other.m_context)
     {
-        if(this != &other){
-            if(m_context){
-                clReleaseContext(m_context);
-            }
+        other.m_context = 0;
+    }
 
-            m_context = other.m_context;
-            other.m_context = 0;
+    /// Move-assigns the context from \p other to \c *this.
+    context& operator=(context&& other) BOOST_NOEXCEPT
+    {
+        if(m_context){
+            clReleaseContext(m_context);
         }
+
+        m_context = other.m_context;
+        other.m_context = 0;
 
         return *this;
     }
+    #endif // BOOST_COMPUTE_NO_RVALUE_REFERENCES
 
     /// Destroys the context object.
     ~context()
@@ -166,6 +182,11 @@ public:
         return detail::get_object_info<T>(clGetContextInfo, m_context, info);
     }
 
+    /// \overload
+    template<int Enum>
+    typename detail::get_object_info_type<context, Enum>::type
+    get_info() const;
+
     /// Returns \c true if the context is the same at \p other.
     bool operator==(const context &other) const
     {
@@ -203,10 +224,21 @@ private:
     }
 
 private:
-    BOOST_COPYABLE_AND_MOVABLE(context)
-
     cl_context m_context;
 };
+
+/// \internal_ define get_info() specializations for context
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(context,
+    ((cl_uint, CL_CONTEXT_REFERENCE_COUNT))
+    ((std::vector<cl_device_id>, CL_CONTEXT_DEVICES))
+    ((std::vector<cl_context_properties>, CL_CONTEXT_PROPERTIES))
+)
+
+#ifdef CL_VERSION_1_1
+BOOST_COMPUTE_DETAIL_DEFINE_GET_INFO_SPECIALIZATIONS(context,
+    ((cl_uint, CL_CONTEXT_NUM_DEVICES))
+)
+#endif // CL_VERSION_1_1
 
 } // end compute namespace
 } // end boost namespace

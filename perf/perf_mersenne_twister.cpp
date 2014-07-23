@@ -14,7 +14,7 @@
 
 #include <boost/compute/system.hpp>
 #include <boost/compute/container/vector.hpp>
-#include <boost/compute/random/mersenne_twister.hpp>
+#include <boost/compute/random/mersenne_twister_engine.hpp>
 
 #include "perf.hpp"
 
@@ -34,12 +34,12 @@ int main(int argc, char *argv[])
     compute::vector<unsigned int> vector(PERF_N, context);
 
     // create mersenne twister engine
-    compute::mt19937 rng(context);
+    compute::mt19937 rng(queue);
 
     // generate random numbers
     perf_timer t;
     t.start();
-    rng.fill(vector.begin(), vector.end(), queue);
+    rng.generate(vector.begin(), vector.end(), queue);
     queue.finish();
     t.stop();
     std::cout << "time: " << t.last_time() / 1e6 << " ms" << std::endl;

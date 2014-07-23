@@ -24,6 +24,7 @@
 #include <boost/compute/algorithm/copy.hpp>
 #include <boost/compute/async/future.hpp>
 #include <boost/compute/iterator/constant_iterator.hpp>
+#include <boost/compute/iterator/discard_iterator.hpp>
 #include <boost/compute/detail/is_buffer_iterator.hpp>
 #include <boost/compute/detail/iterator_range_size.hpp>
 
@@ -90,6 +91,9 @@ struct is_valid_fill_buffer_iterator :
         >
     >::type { };
 
+template<>
+struct is_valid_fill_buffer_iterator<discard_iterator> : public boost::false_type {};
+
 // specialization which uses clEnqueueFillBuffer for buffer iterators
 template<class BufferIterator, class T>
 inline void
@@ -103,14 +107,39 @@ dispatch_fill(BufferIterator first,
 {
     typedef typename std::iterator_traits<BufferIterator>::value_type value_type;
 
+    if(count == 0){
+        // nothing to do
+        return;
+    }
+
+    // check if the device supports OpenCL 1.2 (required for enqueue_fill_buffer)
+    if(!queue.check_device_version(1, 2)){
+        return fill_with_copy(first, count, value, queue);
+    }
+
     value_type pattern = static_cast<value_type>(value);
     size_t offset = static_cast<size_t>(first.get_index());
 
-    queue.enqueue_fill_buffer(first.get_buffer(),
-                              &pattern,
-                              sizeof(value_type),
-                              offset * sizeof(value_type),
-                              count * sizeof(value_type));
+    if(count == 1){
+        // use clEnqueueWriteBuffer() directly when writing a single value
+        // to the device buffer. this is potentially more efficient and also
+        // works around a bug in the intel opencl driver.
+        queue.enqueue_write_buffer(
+            first.get_buffer(),
+            offset * sizeof(value_type),
+            sizeof(value_type),
+            &pattern
+        );
+    }
+    else {
+        queue.enqueue_fill_buffer(
+            first.get_buffer(),
+            &pattern,
+            sizeof(value_type),
+            offset * sizeof(value_type),
+            count * sizeof(value_type)
+        );
+    }
 }
 
 template<class BufferIterator, class T>
@@ -124,6 +153,11 @@ dispatch_fill_async(BufferIterator first,
                     >::type* = 0)
 {
     typedef typename std::iterator_traits<BufferIterator>::value_type value_type;
+
+    // check if the device supports OpenCL 1.2 (required for enqueue_fill_buffer)
+    if(!queue.check_device_version(1, 2)){
+        return fill_async_with_copy(first, count, value, queue);
+    }
 
     value_type pattern = static_cast<value_type>(value);
     size_t offset = static_cast<size_t>(first.get_index());
@@ -188,7 +222,21 @@ inline future<void> dispatch_fill_async(BufferIterator first,
 
 /// Fills the range [\p first, \p last) with \p value.
 ///
-/// \see fill_n()
+/// \param first first element in the range to fill
+/// \param last last element in the range to fill
+/// \param value value to copy to each element
+/// \param queue command queue to perform the operation
+///
+/// For example, to fill a vector on the device with sevens:
+/// \code
+/// // vector on the device
+/// boost::compute::vector<int> vec(10, context);
+///
+/// // fill vector with sevens
+/// boost::compute::fill(vec.begin(), vec.end(), 7, queue);
+/// \endcode
+///
+/// \see boost::compute::fill_n()
 template<class BufferIterator, class T>
 inline void fill(BufferIterator first,
                  BufferIterator last,

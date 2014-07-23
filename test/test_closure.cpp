@@ -26,9 +26,9 @@ namespace compute = boost::compute;
 BOOST_AUTO_TEST_CASE(add_two)
 {
     int two = 2;
-    BOOST_COMPUTE_CLOSURE(int, add_two, (int), (two),
+    BOOST_COMPUTE_CLOSURE(int, add_two, (int x), (two),
     {
-        return _1 + two;
+        return x + two;
     });
 
     int data[] = { 1, 2, 3, 4 };
@@ -44,9 +44,9 @@ BOOST_AUTO_TEST_CASE(add_two_and_pi)
 {
     int two = 2;
     float pi = 3.14f;
-    BOOST_COMPUTE_CLOSURE(float, add_two_and_pi, (float), (two, pi),
+    BOOST_COMPUTE_CLOSURE(float, add_two_and_pi, (float x), (two, pi),
     {
-        return _1 + two + pi;
+        return x + two + pi;
     });
 
     float data[] = { 1.9f, 2.2f, 3.4f, 4.7f };
@@ -62,6 +62,24 @@ BOOST_AUTO_TEST_CASE(add_two_and_pi)
     BOOST_CHECK_CLOSE(results[1], 7.34f, 1e-6);
     BOOST_CHECK_CLOSE(results[2], 8.54f, 1e-6);
     BOOST_CHECK_CLOSE(results[3], 9.84f, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(scale_add_vec)
+{
+    REQUIRES_OPENCL_VERSION(1,2);
+
+    const int N = 10;
+    float s = 4.5;
+    compute::vector<float> a(N, context);
+    compute::vector<float> b(N, context);
+    a.assign(N, 1.0f, queue);
+    b.assign(N, 2.0f, queue);
+
+    BOOST_COMPUTE_CLOSURE(float, scaleAddVec, (float b, float a), (s),
+    {
+        return b * s + a;
+    });
+    compute::transform(b.begin(), b.end(), a.begin(), b.begin(), scaleAddVec, queue);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
