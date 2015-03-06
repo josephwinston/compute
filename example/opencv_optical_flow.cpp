@@ -15,10 +15,11 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include <boost/compute/source.hpp>
 #include <boost/compute/system.hpp>
 #include <boost/compute/interop/opencv/core.hpp>
 #include <boost/compute/interop/opencv/highgui.hpp>
+#include <boost/compute/utility/source.hpp>
+
 #include <boost/program_options.hpp>
 
 namespace compute = boost::compute;
@@ -202,10 +203,10 @@ int main(int argc, char *argv[])
     // Create output image
     compute::image2d dev_output_image(
                 context,
-                compute::image2d::write_only,
-                dev_previous_image.get_format(),
                 dev_previous_image.width(),
-                dev_previous_image.height()
+                dev_previous_image.height(),
+                dev_previous_image.format(),
+                compute::image2d::write_only
                 );
 
     compute::program optical_program =

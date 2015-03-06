@@ -21,10 +21,6 @@
 #include <boost/compute/context.hpp>
 #include <boost/compute/device.hpp>
 #include <boost/compute/event.hpp>
-#include <boost/compute/image2d.hpp>
-#include <boost/compute/image3d.hpp>
-#include <boost/compute/image_format.hpp>
-#include <boost/compute/image_sampler.hpp>
 #include <boost/compute/kernel.hpp>
 #include <boost/compute/memory_object.hpp>
 #include <boost/compute/platform.hpp>
@@ -32,6 +28,5 @@
 #include <boost/compute/system.hpp>
 #include <boost/compute/user_event.hpp>
 #include <boost/compute/version.hpp>
-#include <boost/compute/wait_list.hpp>
 
 #endif // BOOST_COMPUTE_CORE_HPP

@@ -6,27 +6,36 @@ if (${BOOST_COMPUTE_USE_OFFLINE_CACHE})
   set(PERF_BOOST_COMPONENTS ${PERF_BOOST_COMPONENTS} filesystem)
 endif()
 
+if(${BOOST_COMPUTE_THREAD_SAFE} AND NOT ${BOOST_COMPUTE_USE_CPP11})
+  set(PERF_BOOST_COMPONENTS ${PERF_BOOST_COMPONENTS} thread)
+endif()
+
 find_package(Boost 1.48 REQUIRED COMPONENTS ${PERF_BOOST_COMPONENTS})
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 set(BENCHMARKS
   accumulate
   bernoulli_distribution
+  binary_find
   cart_to_polar
   copy_if
   copy_to_device
   count
   discrete_distribution
   erase_remove
+  exclusive_scan
   fill
   find_end
   includes
   inner_product
   is_permutation
+  is_sorted
   linear_congruential_engine
+  max_element
   merge
   mersenne_twister
   next_permutation
+  nth_element
   partial_sum
   partition
   partition_point
@@ -49,7 +58,6 @@ set(BENCHMARKS
   uniform_int_distribution
   unique
   unique_copy
-  exclusive_scan
 )
 
 foreach(BENCHMARK ${BENCHMARKS})
@@ -65,6 +73,7 @@ set(STL_BENCHMARKS
   stl_find_end
   stl_includes
   stl_inner_product
+  stl_max_element
   stl_merge
   stl_next_permutation
   stl_partial_sum
@@ -108,11 +117,17 @@ if(${BOOST_COMPUTE_HAVE_CUDA})
   set(CUDA_BENCHMARKS
     thrust_accumulate
     thrust_count
-    thrust_inner_product
-    thrust_partial_sum
-    thrust_saxpy
-    thrust_sort
     thrust_exclusive_scan
+    thrust_inner_product
+    thrust_merge
+    thrust_partial_sum
+    thrust_partition
+    thrust_reverse
+    thrust_rotate
+    thrust_saxpy
+    thrust_set_difference
+    thrust_sort
+    thrust_unique
   )
 
   foreach(BENCHMARK ${CUDA_BENCHMARKS})

@@ -32,10 +32,11 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include <boost/compute/source.hpp>
 #include <boost/compute/system.hpp>
 #include <boost/compute/interop/opencv/core.hpp>
 #include <boost/compute/interop/opencv/highgui.hpp>
+#include <boost/compute/utility/source.hpp>
+
 #include <boost/program_options.hpp>
 
 namespace compute = boost::compute;
@@ -191,10 +192,10 @@ int main(int argc, char *argv[])
     // Be sure what will be your ouput image/frame size
     compute::image2d dev_output_image(
                 context,
-                compute::image2d::write_only,
-                dev_input_image.get_format(),
                 dev_input_image.width(),
-                dev_input_image.height()
+                dev_input_image.height(),
+                dev_input_image.format(),
+                compute::image2d::write_only
                 );
 
     filter_kernel.set_arg(0, dev_input_image);

@@ -11,10 +11,15 @@
 #define BOOST_TEST_MODULE TestProgram
 #include <boost/test/unit_test.hpp>
 
+// disable the automatic kernel compilation debug messages. this allows the
+// test for program to check that compilation error exceptions are properly
+// thrown when invalid kernel code is passed to program::build().
+#undef BOOST_COMPUTE_DEBUG_KERNEL_COMPILATION
+
 #include <boost/compute/kernel.hpp>
-#include <boost/compute/source.hpp>
 #include <boost/compute/system.hpp>
 #include <boost/compute/program.hpp>
+#include <boost/compute/utility/source.hpp>
 
 #include "context_setup.hpp"
 
@@ -23,6 +28,7 @@ namespace compute = boost::compute;
 const char source[] =
     "__kernel void foo(__global float *x, const uint n) { }\n"
     "__kernel void bar(__global int *x, __global int *y) { }\n";
+
 
 BOOST_AUTO_TEST_CASE(get_program_info)
 {
@@ -38,6 +44,15 @@ BOOST_AUTO_TEST_CASE(get_program_info)
     BOOST_CHECK(program.source().empty() == false);
 #endif
     BOOST_CHECK(program.get_context() == context);
+}
+
+BOOST_AUTO_TEST_CASE(program_source)
+{
+    // create program from source
+    boost::compute::program program =
+        boost::compute::program::create_with_source(source, context);
+
+    BOOST_CHECK_EQUAL(std::string(source), program.source());
 }
 
 BOOST_AUTO_TEST_CASE(create_kernel)
@@ -104,6 +119,10 @@ BOOST_AUTO_TEST_CASE(compile_and_link)
 
     // create the library program
     const char library_source[] = BOOST_COMPUTE_STRINGIZE_SOURCE(
+        // for some reason the apple opencl compilers complains if a prototype
+        // for the square() function is not available, so we add it here
+        T square(T);
+
         // generic square function definition
         T square(T x) { return x * x; }
     );
@@ -144,5 +163,25 @@ BOOST_AUTO_TEST_CASE(compile_and_link)
     BOOST_CHECK_EQUAL(square_kernel.name(), "square_kernel");
 }
 #endif // CL_VERSION_1_2
+
+BOOST_AUTO_TEST_CASE(build_log)
+{
+    const char invalid_source[] =
+        "__kernel void foo(__global int *input) { !@#$%^&*() }";
+
+    compute::program invalid_program =
+        compute::program::create_with_source(invalid_source, context);
+
+    try {
+        invalid_program.build();
+
+        // should not get here
+        BOOST_CHECK(false);
+    }
+    catch(compute::opencl_error &e){
+        std::string log = invalid_program.build_log();
+        BOOST_CHECK(!log.empty());
+    }
+}
 
 BOOST_AUTO_TEST_SUITE_END()

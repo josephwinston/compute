@@ -13,12 +13,14 @@
 
 #include <string>
 
+#include <boost/compute/command_queue.hpp>
+#include <boost/compute/function.hpp>
 #include <boost/compute/lambda.hpp>
 #include <boost/compute/system.hpp>
-#include <boost/compute/command_queue.hpp>
 #include <boost/compute/algorithm/copy.hpp>
 #include <boost/compute/algorithm/count.hpp>
 #include <boost/compute/algorithm/count_if.hpp>
+#include <boost/compute/algorithm/iota.hpp>
 #include <boost/compute/container/vector.hpp>
 #include <boost/compute/iterator/constant_iterator.hpp>
 
@@ -181,6 +183,36 @@ BOOST_AUTO_TEST_CASE(count_vector_component)
     BOOST_CHECK_EQUAL(
         compute::count_if(vector.begin(), vector.end(), get<1>(_1) > 3),
         size_t(3)
+    );
+}
+
+BOOST_AUTO_TEST_CASE(count_if_odd)
+{
+    compute::vector<int> vec(2048, context);
+    compute::iota(vec.begin(), vec.end(), 0, queue);
+
+    BOOST_COMPUTE_FUNCTION(bool, is_odd, (int x),
+    {
+        return x & 1;
+    });
+
+    BOOST_CHECK_EQUAL(
+        compute::count_if(vec.begin(), vec.end(), is_odd, queue), vec.size() / 2
+    );
+}
+
+BOOST_AUTO_TEST_CASE(count_if_with_reduce)
+{
+    compute::vector<int> vec(2048, context);
+    compute::iota(vec.begin(), vec.end(), 0, queue);
+
+    using boost::compute::lambda::_1;
+
+    BOOST_CHECK_EQUAL(
+        compute::detail::count_if_with_reduce(
+            vec.begin(), vec.end(), _1 > 1024, queue
+        ),
+        size_t(1023)
     );
 }
 

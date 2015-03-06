@@ -12,10 +12,10 @@
 #include <iostream>
 
 #include <boost/compute/command_queue.hpp>
-#include <boost/compute/source.hpp>
 #include <boost/compute/system.hpp>
 #include <boost/compute/algorithm/copy_n.hpp>
 #include <boost/compute/container/vector.hpp>
+#include <boost/compute/utility/source.hpp>
 
 namespace compute = boost::compute;
 
@@ -70,7 +70,7 @@ int main()
     // source code for black-scholes program
     const char source[] = BOOST_COMPUTE_STRINGIZE_SOURCE(
         // approximation of the cumulative normal distribution function
-        float cnd(float d)
+        static float cnd(float d)
         {
             const float A1 =  0.319381530f;
             const float A2 = -0.356563782f;
@@ -145,8 +145,21 @@ int main()
     std::cout << "option 0 call price: " << call0 << std::endl;
     std::cout << "option 0 put price: " << put0 << std::endl;
 
+    // due to the differences in the random-number generators between Operating Systems
+    // and/or compilers, we will get different "expected" results for this example
+#ifdef __APPLE__
+    double expected_call0 = 0.000249461;
+    double expected_put0 = 26.2798;
+#elif _MSC_VER
+    double expected_call0 = 8.21412;
+    double expected_put0 = 2.25904;
+#else
+    double expected_call0 = 0.0999f;
+    double expected_put0 = 43.0524f;
+#endif
+
     // check option prices
-    if(std::fabs(call0 - 0.0999f) > 1e-6 || std::fabs(put0 - 43.0524f) > 1e-6){
+    if(std::abs(call0 - expected_call0) > 1e-4 || std::abs(put0 - expected_put0) > 1e-4){
         std::cerr << "error: option prices are wrong" << std::endl;
         return -1;
     }

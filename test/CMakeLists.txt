@@ -2,14 +2,24 @@ include_directories(../include)
 
 set(BOOST_COMPONENTS unit_test_framework)
 
+if(${BOOST_COMPUTE_USE_CPP11})
+  # allow tests to use C++11 features
+  add_definitions(-DBOOST_COMPUTE_USE_CPP11)
+endif()
+
 if (${BOOST_COMPUTE_USE_OFFLINE_CACHE})
-    set(BOOST_COMPONENTS ${BOOST_COMPONENTS} system filesystem)
-    add_definitions(-DBOOST_COMPUTE_USE_OFFLINE_CACHE)
+  set(BOOST_COMPONENTS ${BOOST_COMPONENTS} system filesystem)
+  add_definitions(-DBOOST_COMPUTE_USE_OFFLINE_CACHE)
+endif()
+
+if(${BOOST_COMPUTE_THREAD_SAFE} AND NOT ${BOOST_COMPUTE_USE_CPP11})
+  set(BOOST_COMPONENTS ${BOOST_COMPONENTS} thread)
 endif()
 
 find_package(Boost 1.48 REQUIRED COMPONENTS ${BOOST_COMPONENTS})
 add_definitions(-DBOOST_TEST_DYN_LINK)
 
+# enable automatic kernel compilation error messages for tests
 add_definitions(-DBOOST_COMPUTE_DEBUG_KERNEL_COMPILATION)
 
 # enable code coverage generation (only with GCC for now)
@@ -40,15 +50,17 @@ add_compute_test("core.context" test_context.cpp)
 add_compute_test("core.device" test_device.cpp)
 add_compute_test("core.event" test_event.cpp)
 add_compute_test("core.function" test_function.cpp)
-add_compute_test("core.image2d" test_image2d.cpp)
-add_compute_test("core.image3d" test_image3d.cpp)
-add_compute_test("core.image_sampler" test_image_sampler.cpp)
 add_compute_test("core.kernel" test_kernel.cpp)
+add_compute_test("core.pipe" test_pipe.cpp)
+add_compute_test("core.platform" test_platform.cpp)
 add_compute_test("core.program" test_program.cpp)
 add_compute_test("core.system" test_system.cpp)
 add_compute_test("core.type_traits" test_type_traits.cpp)
 add_compute_test("core.user_event" test_user_event.cpp)
-add_compute_test("core.wait_list" test_wait_list.cpp)
+
+add_compute_test("utility.extents" test_extents.cpp)
+add_compute_test("utility.program_cache" test_program_cache.cpp)
+add_compute_test("utility.wait_list" test_wait_list.cpp)
 
 add_compute_test("algorithm.accumulate" test_accumulate.cpp)
 add_compute_test("algorithm.adjacent_difference" test_adjacent_difference.cpp)
@@ -108,11 +120,16 @@ add_compute_test("algorithm.transform" test_transform.cpp)
 add_compute_test("algorithm.transform_reduce" test_transform_reduce.cpp)
 add_compute_test("algorithm.unique" test_unique.cpp)
 add_compute_test("algorithm.unique_copy" test_unique_copy.cpp)
+add_compute_test("algorithm.lexicographical_compare" test_lexicographical_compare.cpp)
+
+add_compute_test("allocator.buffer_allocator" test_buffer_allocator.cpp)
+add_compute_test("allocator.pinned_allocator" test_pinned_allocator.cpp)
 
 add_compute_test("async.wait" test_async_wait.cpp)
+add_compute_test("async.wait_guard" test_async_wait_guard.cpp)
 
-add_compute_test("container.allocator" test_allocator.cpp)
 add_compute_test("container.array" test_array.cpp)
+add_compute_test("container.dynamic_bitset" test_dynamic_bitset.cpp)
 add_compute_test("container.flat_map" test_flat_map.cpp)
 add_compute_test("container.flat_set" test_flat_set.cpp)
 add_compute_test("container.mapped_view" test_mapped_view.cpp)
@@ -121,22 +138,36 @@ add_compute_test("container.string" test_string.cpp)
 add_compute_test("container.valarray" test_valarray.cpp)
 add_compute_test("container.vector" test_vector.cpp)
 
+add_compute_test("exception.context_error" test_context_error.cpp)
+add_compute_test("exception.no_device_found" test_no_device_found.cpp)
 add_compute_test("exception.opencl_error" test_opencl_error.cpp)
+add_compute_test("exception.unsupported_extension" test_unsupported_extension.cpp)
 
 add_compute_test("functional.as" test_functional_as.cpp)
+add_compute_test("functional.bind" test_functional_bind.cpp)
 add_compute_test("functional.convert" test_functional_convert.cpp)
 add_compute_test("functional.get" test_functional_get.cpp)
 add_compute_test("functional.hash" test_functional_hash.cpp)
+add_compute_test("functional.identity" test_functional_identity.cpp)
+add_compute_test("functional.popcount" test_functional_popcount.cpp)
 add_compute_test("functional.unpack" test_functional_unpack.cpp)
 
-add_compute_test("iterator.adjacent_transform_iterator" test_adjacent_transform_iterator.cpp)
+add_compute_test("image.image1d" test_image1d.cpp)
+add_compute_test("image.image2d" test_image2d.cpp)
+add_compute_test("image.image3d" test_image3d.cpp)
+add_compute_test("image.image_sampler" test_image_sampler.cpp)
+
 add_compute_test("iterator.buffer_iterator" test_buffer_iterator.cpp)
 add_compute_test("iterator.constant_iterator" test_constant_iterator.cpp)
 add_compute_test("iterator.counting_iterator" test_counting_iterator.cpp)
 add_compute_test("iterator.discard_iterator" test_discard_iterator.cpp)
+add_compute_test("iterator.function_input_iterator" test_function_input_iterator.cpp)
 add_compute_test("iterator.permutation_iterator" test_permutation_iterator.cpp)
 add_compute_test("iterator.transform_iterator" test_transform_iterator.cpp)
 add_compute_test("iterator.zip_iterator" test_zip_iterator.cpp)
+
+add_compute_test("memory.local_buffer" test_local_buffer.cpp)
+add_compute_test("memory.svm_ptr" test_svm_ptr.cpp)
 
 add_compute_test("random.bernoulli_distribution" test_bernoulli_distribution.cpp)
 add_compute_test("random.discrete_distribution" test_discrete_distribution.cpp)
@@ -146,11 +177,13 @@ add_compute_test("random.normal_distribution" test_normal_distribution.cpp)
 add_compute_test("random.uniform_int_distribution" test_uniform_int_distribution.cpp)
 add_compute_test("random.uniform_real_distribution" test_uniform_real_distribution.cpp)
 
-add_compute_test("types.builtin" test_types.cpp)
+add_compute_test("types.fundamental" test_types.cpp)
 add_compute_test("types.complex" test_complex.cpp)
 add_compute_test("types.pair" test_pair.cpp)
 add_compute_test("types.tuple" test_tuple.cpp)
 add_compute_test("types.struct" test_struct.cpp)
+
+add_compute_test("type_traits.result_of" test_result_of.cpp)
 
 add_compute_test("experimental.clamp_range" test_clamp_range.cpp)
 add_compute_test("experimental.malloc" test_malloc.cpp)
@@ -158,59 +191,10 @@ add_compute_test("experimental.sort_by_transform" test_sort_by_transform.cpp)
 add_compute_test("experimental.tabulate" test_tabulate.cpp)
 add_compute_test("experimental.transform_if" test_transform_if.cpp)
 
-add_compute_test("ext.lambda" test_lambda.cpp)
-add_compute_test("ext.program_cache" test_program_cache.cpp)
-add_compute_test("ext.amd_cpp_kernel_language" test_amd_cpp_kernel_language.cpp)
+# miscellaneous tests
+add_compute_test("misc.amd_cpp_kernel_language" test_amd_cpp_kernel_language.cpp)
+add_compute_test("misc.lambda" test_lambda.cpp)
+add_compute_test("misc.user_defined_types" test_user_defined_types.cpp)
 
-# eigen interop tests
-if(${BOOST_COMPUTE_HAVE_EIGEN})
-  find_package(Eigen REQUIRED)
-  include_directories(SYSTEM ${EIGEN_INCLUDE_DIRS})
-  add_compute_test("interop.eigen" test_interop_eigen.cpp)
-endif()
-
-# opencv interop tests
-if(${BOOST_COMPUTE_HAVE_OPENCV})
-  find_package(OpenCV REQUIRED)
-  include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
-  add_compute_test("interop.opencv" test_interop_opencv.cpp)
-  target_link_libraries(test_interop_opencv ${OpenCV_LIBS})
-endif()
-
-# qt interop tests
-if(${BOOST_COMPUTE_HAVE_QT})
-  find_package(Qt REQUIRED COMPONENTS QtCore QtGui QtOpenGL)
-  include(${QT_USE_FILE})
-  add_compute_test("interop.qt" test_interop_qt.cpp)
-  target_link_libraries(test_interop_qt ${QT_LIBRARIES})
-
-  # the opengl interop test depends on qt to create the opengl context
-  add_compute_test("interop.opengl" test_interop_opengl.cpp)
-  target_link_libraries(test_interop_opengl ${QT_LIBRARIES})
-endif()
-
-# vtk interop tests
-if(${BOOST_COMPUTE_HAVE_VTK})
-  find_package(VTK REQUIRED)
-  include(${VTK_USE_FILE})
-  add_compute_test("interop.vtk" test_interop_vtk.cpp)
-  target_link_libraries(test_interop_vtk ${VTK_LIBRARIES})
-endif()
-
-# tests for particular bugs/issues
-add_compute_test("issue.user_defined_types" test_user_defined_types.cpp)
-
-# Check for linkage problems
-add_executable(test_multiple_objects
-    test_multiple_objects1.cpp
-    test_multiple_objects2.cpp
-    )
-target_link_libraries(test_multiple_objects
-    ${OPENCL_LIBRARIES}
-    ${Boost_LIBRARIES}
-    )
-# link with coverage library
-if(${BOOST_COMPUTE_ENABLE_COVERAGE} AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-  target_link_libraries(test_multiple_objects -fprofile-arcs -ftest-coverage)
-endif()
-add_test("issue.multiple_objects" test_multiple_objects)
+# extra tests (interop tests, linkage tests, etc.)
+add_subdirectory(extra)

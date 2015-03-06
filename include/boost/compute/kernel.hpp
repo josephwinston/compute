@@ -22,6 +22,7 @@
 #include <boost/compute/type_traits/is_fundamental.hpp>
 #include <boost/compute/detail/get_object_info.hpp>
 #include <boost/compute/detail/assert_cl_success.hpp>
+#include <boost/compute/memory/svm_ptr.hpp>
 
 namespace boost {
 namespace compute {
@@ -171,24 +172,24 @@ public:
     #if defined(CL_VERSION_1_2) || defined(BOOST_COMPUTE_DOXYGEN_INVOKED)
     /// Returns information about the argument at \p index.
     ///
+    /// For example, to get the name of the first argument:
+    /// \code
+    /// std::string arg = kernel.get_arg_info<std::string>(0, CL_KERNEL_ARG_NAME);
+    /// \endcode
+    ///
+    /// Note, this function requires that the program be compiled with the
+    /// \c "-cl-kernel-arg-info" flag. For example:
+    /// \code
+    /// program.build("-cl-kernel-arg-info");
+    /// \endcode
+    ///
     /// \opencl_version_warning{1,2}
     ///
     /// \see_opencl_ref{clGetKernelArgInfo}
     template<class T>
-    T get_arg_info(size_t index, cl_kernel_arg_info info)
+    T get_arg_info(size_t index, cl_kernel_arg_info info) const
     {
-        T value;
-        cl_int ret = clGetKernelArgInfo(m_kernel,
-                                        index,
-                                        info,
-                                        sizeof(T),
-                                        &value,
-                                        0);
-        if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(opencl_error(ret));
-        }
-
-        return value;
+        return detail::get_object_info<T>(clGetKernelArgInfo, m_kernel, info, index);
     }
     #endif // CL_VERSION_1_2
 
@@ -198,18 +199,7 @@ public:
     template<class T>
     T get_work_group_info(const device &device, cl_kernel_work_group_info info)
     {
-        T value;
-        cl_int ret = clGetKernelWorkGroupInfo(m_kernel,
-                                              device.id(),
-                                              info,
-                                              sizeof(T),
-                                              &value,
-                                              0);
-        if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(opencl_error(ret));
-        }
-
-        return value;
+        return detail::get_object_info<T>(clGetKernelWorkGroupInfo, m_kernel, info, device.id());
     }
 
     /// Sets the argument at \p index to \p value with \p size.
@@ -240,6 +230,13 @@ public:
     /// This method is also specialized for device container types such as
     /// vector<T> and array<T, N>. This allows for them to be passed directly
     /// as kernel arguments without having to extract their underlying buffer.
+    ///
+    /// For setting local memory arguments (e.g. "__local float *buf"), the
+    /// local_buffer<T> class may be used:
+    /// \code
+    /// // set argument to a local buffer with storage for 32 float's
+    /// kernel.set_arg(0, local_buffer<float>(32));
+    /// \endcode
     template<class T>
     void set_arg(size_t index, const T &value)
     {
@@ -260,6 +257,20 @@ public:
         set_arg(index, sizeof(cl_sampler), static_cast<const void *>(&sampler));
     }
 
+    /// \internal_
+    template<class T>
+    void set_arg(size_t index, const svm_ptr<T> ptr)
+    {
+        #ifdef CL_VERSION_2_0
+        cl_int ret = clSetKernelArgSVMPointer(m_kernel, index, ptr.get());
+        if(ret != CL_SUCCESS){
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
+        }
+        #else
+        BOOST_THROW_EXCEPTION(opencl_error(CL_INVALID_ARG_VALUE));
+        #endif
+    }
+
     #ifndef BOOST_NO_VARIADIC_TEMPLATES
     /// Sets the arguments for the kernel to \p args.
     template<class... T>
@@ -270,6 +281,21 @@ public:
         _set_args<0>(args...);
     }
     #endif // BOOST_NO_VARIADIC_TEMPLATES
+
+    #if defined(CL_VERSION_2_0) || defined(BOOST_COMPUTE_DOXYGEN_INVOKED)
+    /// Sets additional execution information for the kernel.
+    ///
+    /// \opencl_version_warning{2,0}
+    ///
+    /// \see_opencl2_ref{clSetKernelExecInfo}
+    void set_exec_info(cl_kernel_exec_info info, size_t size, const void *value)
+    {
+        cl_int ret = clSetKernelExecInfo(m_kernel, info, size, value);
+        if(ret != CL_SUCCESS){
+            BOOST_THROW_EXCEPTION(opencl_error(ret));
+        }
+    }
+    #endif // CL_VERSION_2_0
 
     /// Returns \c true if the kernel is the same at \p other.
     bool operator==(const kernel &other) const

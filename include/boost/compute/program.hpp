@@ -56,17 +56,17 @@ class kernel;
 /// \endcode
 ///
 /// Once a program object has been succesfully created, it can be compiled
-/// using the build() method:
+/// using the \c build() method:
 /// \code
 /// // build the program
 /// foo_program.build();
 /// \endcode
 ///
-/// Kernel objects can be created from compiled programs using the kernel
-/// class's constructor:
+/// Once the program is built, \ref kernel objects can be created using the
+/// \c create_kernel() method by passing their name:
 /// \code
 /// // create a kernel from the compiled program
-/// boost::compute::kernel foo_kernel(foo_program, "foo");
+/// boost::compute::kernel foo_kernel = foo_program.create_kernel("foo");
 /// \endcode
 ///
 /// \see kernel
@@ -181,19 +181,8 @@ public:
 
     std::vector<device> get_devices() const
     {
-        size_t device_ids_size = 0;
-        clGetProgramInfo(m_program,
-                         CL_PROGRAM_DEVICES,
-                         0,
-                         0,
-                         &device_ids_size);
-
-        std::vector<cl_device_id> device_ids(device_ids_size / sizeof(size_t));
-        clGetProgramInfo(m_program,
-                         CL_PROGRAM_DEVICES,
-                         device_ids_size,
-                         &device_ids[0],
-                         0);
+        std::vector<cl_device_id> device_ids =
+            get_info<std::vector<cl_device_id> >(CL_PROGRAM_DEVICES);
 
         std::vector<device> devices;
         for(size_t i = 0; i < device_ids.size(); i++){
@@ -222,6 +211,22 @@ public:
     template<int Enum>
     typename detail::get_object_info_type<program, Enum>::type
     get_info() const;
+
+    /// Returns build information about the program.
+    ///
+    /// For example, this function can be used to retreive the options used
+    /// to build the program:
+    /// \code
+    /// std::string build_options =
+    ///     program.get_build_info<std::string>(CL_PROGRAM_BUILD_OPTIONS);
+    /// \endcode
+    ///
+    /// \see_opencl_ref{clGetProgramInfo}
+    template<class T>
+    T get_build_info(cl_program_build_info info, const device &device) const
+    {
+        return detail::get_object_info<T>(clGetProgramBuildInfo, m_program, info, device.id());
+    }
 
     /// Builds the program with \p options.
     ///
@@ -329,31 +334,7 @@ public:
     /// Returns the build log.
     std::string build_log() const
     {
-        device device = get_devices()[0];
-
-        size_t size = 0;
-        cl_int ret = clGetProgramBuildInfo(m_program,
-                                           device.id(),
-                                           CL_PROGRAM_BUILD_LOG,
-                                           0,
-                                           0,
-                                           &size);
-        if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(opencl_error(ret));
-        }
-
-        std::string value(size - 1, 0);
-        ret = clGetProgramBuildInfo(m_program,
-                                    device.id(),
-                                    CL_PROGRAM_BUILD_LOG,
-                                    size,
-                                    &value[0],
-                                    0);
-        if(ret != CL_SUCCESS){
-            BOOST_THROW_EXCEPTION(opencl_error(ret));
-        }
-
-        return value;
+        return get_build_info<std::string>(CL_PROGRAM_BUILD_LOG, get_devices().front());
     }
 
     /// Creates and returns a new kernel object for \p name.
@@ -527,7 +508,7 @@ public:
         std::string hash;
         {
             device   d(context.get_device());
-            platform p(d.get_info<cl_platform_id>(CL_DEVICE_PLATFORM));
+            platform p = d.platform();
 
             std::ostringstream src;
             src << "// " << p.name() << " v" << p.version() << "\n"

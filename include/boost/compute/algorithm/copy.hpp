@@ -16,21 +16,45 @@
 
 #include <boost/utility/enable_if.hpp>
 
+#include <boost/mpl/and.hpp>
+#include <boost/mpl/not.hpp>
+
 #include <boost/compute/buffer.hpp>
 #include <boost/compute/system.hpp>
 #include <boost/compute/command_queue.hpp>
-#include <boost/compute/async/future.hpp>
-#include <boost/compute/iterator/buffer_iterator.hpp>
-#include <boost/compute/detail/is_device_iterator.hpp>
-#include <boost/compute/detail/is_contiguous_iterator.hpp>
-#include <boost/compute/detail/iterator_range_size.hpp>
-#include <boost/compute/algorithm/detail/copy_to_host.hpp>
 #include <boost/compute/algorithm/detail/copy_on_device.hpp>
 #include <boost/compute/algorithm/detail/copy_to_device.hpp>
+#include <boost/compute/algorithm/detail/copy_to_host.hpp>
+#include <boost/compute/async/future.hpp>
+#include <boost/compute/detail/is_contiguous_iterator.hpp>
+#include <boost/compute/detail/iterator_range_size.hpp>
+#include <boost/compute/iterator/buffer_iterator.hpp>
+#include <boost/compute/type_traits/is_device_iterator.hpp>
 
 namespace boost {
 namespace compute {
 namespace detail {
+
+namespace mpl = boost::mpl;
+
+// meta-function returning true if copy() between InputIterator and
+// OutputIterator can be implemented with clEnqueueCopyBuffer().
+template<class InputIterator, class OutputIterator>
+struct can_copy_with_copy_buffer :
+    mpl::and_<
+        boost::is_same<
+            InputIterator,
+            buffer_iterator<typename InputIterator::value_type>
+        >,
+        boost::is_same<
+            OutputIterator,
+            buffer_iterator<typename OutputIterator::value_type>
+        >,
+        boost::is_same<
+            typename InputIterator::value_type,
+            typename OutputIterator::value_type
+        >
+    >::type {};
 
 // host -> device
 template<class InputIterator, class OutputIterator>
@@ -68,13 +92,12 @@ dispatch_copy_async(InputIterator first,
                         is_device_iterator<OutputIterator>::value
                     >::type* = 0)
 {
-    if(is_contiguous_iterator<InputIterator>::value){
-        return copy_to_device_async(first, last, result, queue);
-    }
-    else {
-        BOOST_ASSERT(false && "copy_async() is not supported for non-contiguous iterators");
-        return future<OutputIterator>();
-    }
+    BOOST_STATIC_ASSERT_MSG(
+        is_contiguous_iterator<InputIterator>::value,
+        "copy_async() is only supported for contiguous host iterators"
+    );
+
+    return copy_to_device_async(first, last, result, queue);
 }
 
 // device -> host
@@ -114,13 +137,12 @@ dispatch_copy_async(InputIterator first,
                        !is_device_iterator<OutputIterator>::value
                     >::type* = 0)
 {
-    if(is_contiguous_iterator<OutputIterator>::value){
-        return copy_to_host_async(first, last, result, queue);
-    }
-    else {
-        BOOST_ASSERT(false && "copy_async() is not supported for non-contiguous iterators");
-        return future<OutputIterator>();
-    }
+    BOOST_STATIC_ASSERT_MSG(
+        is_contiguous_iterator<OutputIterator>::value,
+        "copy_async() is only supported for contiguous host iterators"
+    );
+
+    return copy_to_host_async(first, last, result, queue);
 }
 
 // device -> device
@@ -130,21 +152,16 @@ dispatch_copy(InputIterator first,
               InputIterator last,
               OutputIterator result,
               command_queue &queue,
-              typename boost::enable_if_c<
-                  is_device_iterator<InputIterator>::value &&
-                  is_device_iterator<OutputIterator>::value &&
-                  !(boost::is_same<
-                        InputIterator,
-                        buffer_iterator<typename InputIterator::value_type>
-                        >::value &&
-                    boost::is_same<
-                        OutputIterator,
-                        buffer_iterator<typename OutputIterator::value_type>
-                    >::value &&
-                    boost::is_same<
-                        typename InputIterator::value_type,
-                        typename OutputIterator::value_type
-                    >::value)
+              typename boost::enable_if<
+                  mpl::and_<
+                      is_device_iterator<InputIterator>,
+                      is_device_iterator<OutputIterator>,
+                      mpl::not_<
+                          can_copy_with_copy_buffer<
+                              InputIterator, OutputIterator
+                          >
+                      >
+                  >
               >::type* = 0)
 {
     return copy_on_device(first, last, result, queue);
@@ -157,19 +174,14 @@ dispatch_copy(InputIterator first,
               InputIterator last,
               OutputIterator result,
               command_queue &queue,
-              typename boost::enable_if_c<
-                  boost::is_same<
-                      InputIterator,
-                      buffer_iterator<typename InputIterator::value_type>
-                  >::value &&
-                  boost::is_same<
-                      OutputIterator,
-                      buffer_iterator<typename OutputIterator::value_type>
-                  >::value &&
-                  boost::is_same<
-                      typename InputIterator::value_type,
-                      typename OutputIterator::value_type
-                  >::value
+              typename boost::enable_if<
+                  mpl::and_<
+                      is_device_iterator<InputIterator>,
+                      is_device_iterator<OutputIterator>,
+                      can_copy_with_copy_buffer<
+                          InputIterator, OutputIterator
+                      >
+                  >
               >::type* = 0)
 {
     typedef typename std::iterator_traits<InputIterator>::value_type value_type;
@@ -178,7 +190,7 @@ dispatch_copy(InputIterator first,
     difference_type n = std::distance(first, last);
     if(n < 1){
         // nothing to copy
-        return first;
+        return result;
     }
 
     queue.enqueue_copy_buffer(first.get_buffer(),
@@ -196,21 +208,16 @@ dispatch_copy_async(InputIterator first,
                     InputIterator last,
                     OutputIterator result,
                     command_queue &queue,
-                    typename boost::enable_if_c<
-                        is_device_iterator<InputIterator>::value &&
-                        is_device_iterator<OutputIterator>::value &&
-                        !(boost::is_same<
-                              InputIterator,
-                              buffer_iterator<typename InputIterator::value_type>
-                              >::value &&
-                          boost::is_same<
-                              OutputIterator,
-                              buffer_iterator<typename OutputIterator::value_type>
-                          >::value &&
-                          boost::is_same<
-                              typename InputIterator::value_type,
-                              typename OutputIterator::value_type
-                          >::value)
+                    typename boost::enable_if<
+                        mpl::and_<
+                            is_device_iterator<InputIterator>,
+                            is_device_iterator<OutputIterator>,
+                            mpl::not_<
+                                can_copy_with_copy_buffer<
+                                    InputIterator, OutputIterator
+                                >
+                            >
+                        >
                     >::type* = 0)
 {
     return copy_on_device_async(first, last, result, queue);
@@ -223,19 +230,14 @@ dispatch_copy_async(InputIterator first,
                     InputIterator last,
                     OutputIterator result,
                     command_queue &queue,
-                    typename boost::enable_if_c<
-                        boost::is_same<
-                            InputIterator,
-                            buffer_iterator<typename InputIterator::value_type>
-                        >::value &&
-                        boost::is_same<
-                            OutputIterator,
-                            buffer_iterator<typename OutputIterator::value_type>
-                        >::value &&
-                        boost::is_same<
-                            typename InputIterator::value_type,
-                            typename OutputIterator::value_type
-                        >::value
+                    typename boost::enable_if<
+                        mpl::and_<
+                            is_device_iterator<InputIterator>,
+                            is_device_iterator<OutputIterator>,
+                            can_copy_with_copy_buffer<
+                                InputIterator, OutputIterator
+                            >
+                        >
                     >::type* = 0)
 {
     typedef typename std::iterator_traits<InputIterator>::value_type value_type;
@@ -244,7 +246,7 @@ dispatch_copy_async(InputIterator first,
     difference_type n = std::distance(first, last);
     if(n < 1){
         // nothing to copy
-        return make_future(first, event());
+        return make_future(result, event());
     }
 
     event event_ =

@@ -13,7 +13,7 @@
 
 #include <boost/compute/algorithm/reduce.hpp>
 #include <boost/compute/iterator/transform_iterator.hpp>
-#include <boost/compute/types/builtin.hpp>
+#include <boost/compute/types/fundamental.hpp>
 
 namespace boost {
 namespace compute {
@@ -35,7 +35,7 @@ template<class Predicate, class Arg>
 inline meta_kernel& operator<<(meta_kernel &kernel,
                                const invoked_countable_predicate<Predicate, Arg> &expr)
 {
-    return kernel << "convert_ulong(" << expr.predicate(expr.arg) << ")";
+    return kernel << "(" << expr.predicate(expr.arg) << " ? 1 : 0)";
 }
 
 // the countable_predicate wraps Predicate and converts its result from

@@ -14,10 +14,11 @@
 #include <boost/compute/kernel.hpp>
 #include <boost/compute/detail/meta_kernel.hpp>
 #include <boost/compute/command_queue.hpp>
-#include <boost/compute/container/vector.hpp>
-#include <boost/compute/iterator/buffer_iterator.hpp>
-#include <boost/compute/detail/iterator_range_size.hpp>
 #include <boost/compute/algorithm/detail/scan_on_cpu.hpp>
+#include <boost/compute/container/vector.hpp>
+#include <boost/compute/detail/iterator_range_size.hpp>
+#include <boost/compute/memory/local_buffer.hpp>
+#include <boost/compute/iterator/buffer_iterator.hpp>
 
 namespace boost {
 namespace compute {
@@ -39,8 +40,8 @@ public:
 
         bool checked = true;
 
-        m_block_sums_arg = add_arg<T *>("__global", "block_sums");
-        m_scratch_arg = add_arg<T *>("__local", "scratch");
+        m_block_sums_arg = add_arg<T *>(memory_object::global_memory, "block_sums");
+        m_scratch_arg = add_arg<T *>(memory_object::local_memory, "scratch");
         m_block_size_arg = add_arg<const cl_uint>("block_size");
         m_count_arg = add_arg<const cl_uint>("count");
 
@@ -133,8 +134,8 @@ public:
     {
         bool checked = true;
 
-        m_output_arg = add_arg<T *>("__global", "output");
-        m_block_sums_arg = add_arg<const T *>("__global", "block_sums");
+        m_output_arg = add_arg<T *>(memory_object::global_memory, "output");
+        m_block_sums_arg = add_arg<const T *>(memory_object::global_memory, "block_sums");
         m_count_arg = add_arg<const cl_uint>("count");
 
         // work-item parameters
@@ -214,7 +215,7 @@ inline OutputIterator scan_impl(InputIterator first,
         local_scan_kernel(first, last, result, exclusive);
 
     ::boost::compute::kernel kernel = local_scan_kernel.compile(context);
-    kernel.set_arg(local_scan_kernel.m_scratch_arg, block_size * sizeof(value_type), 0);
+    kernel.set_arg(local_scan_kernel.m_scratch_arg, local_buffer<value_type>(block_size));
     kernel.set_arg(local_scan_kernel.m_block_sums_arg, block_sums);
     kernel.set_arg(local_scan_kernel.m_block_size_arg, static_cast<cl_uint>(block_size));
     kernel.set_arg(local_scan_kernel.m_count_arg, static_cast<cl_uint>(count));

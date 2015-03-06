@@ -47,6 +47,7 @@ BOOST_AUTO_TEST_CASE(any_nan_inf)
     using ::boost::compute::_1;
     using ::boost::compute::lambda::isinf;
     using ::boost::compute::lambda::isnan;
+    using ::boost::compute::lambda::isfinite;
 
     float nan = std::sqrt(-1.f);
     float inf = std::numeric_limits<float>::infinity();
@@ -61,6 +62,21 @@ BOOST_AUTO_TEST_CASE(any_nan_inf)
     BOOST_CHECK(compute::all_of(vector.begin() + 2, vector.begin() + 4, isnan(_1)) == true);
     BOOST_CHECK(compute::none_of(vector.begin(), vector.end(), isinf(_1)) == false);
     BOOST_CHECK(compute::none_of(vector.begin(), vector.begin() + 4, isinf(_1)) == true);
+}
+
+BOOST_AUTO_TEST_CASE(any_of_doctest)
+{
+    using boost::compute::lambda::_1;
+
+    int data[] = { 1, 2, 3, 4 };
+    boost::compute::vector<int> v(data, data + 4, queue);
+
+    bool result =
+//! [any_of]
+boost::compute::any_of(v.begin(), v.end(), _1 < 0, queue);
+//! [any_of]
+
+    BOOST_CHECK(result == false);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

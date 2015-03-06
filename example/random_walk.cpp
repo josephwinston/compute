@@ -14,14 +14,14 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include <boost/compute/source.hpp>
 #include <boost/compute/system.hpp>
 #include <boost/compute/algorithm/inclusive_scan.hpp>
 #include <boost/compute/algorithm/inclusive_scan.hpp>
-#include <boost/compute/random/default_random_engine.hpp>
-#include <boost/compute/random/uniform_real_distribution.hpp>
 #include <boost/compute/interop/opencv/core.hpp>
 #include <boost/compute/interop/opencv/highgui.hpp>
+#include <boost/compute/random/default_random_engine.hpp>
+#include <boost/compute/random/uniform_real_distribution.hpp>
+#include <boost/compute/utility/source.hpp>
 
 namespace compute = boost::compute;
 
@@ -93,11 +93,7 @@ int main()
 
     // create output image
     compute::image2d image(
-        context,
-        CL_MEM_READ_WRITE,
-        compute::image_format(CL_RGBA, CL_UNSIGNED_INT8),
-        width,
-        height
+        context, width, height, compute::image_format(CL_RGBA, CL_UNSIGNED_INT8)
     );
 
     // program with two kernels, one to fill the image with white, and then

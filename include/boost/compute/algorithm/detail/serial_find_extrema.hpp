@@ -12,7 +12,7 @@
 #define BOOST_COMPUTE_ALGORITHM_DETAIL_SERIAL_FIND_EXTREMA_HPP
 
 #include <boost/compute/command_queue.hpp>
-#include <boost/compute/types/builtin.hpp>
+#include <boost/compute/types/fundamental.hpp>
 #include <boost/compute/detail/meta_kernel.hpp>
 #include <boost/compute/detail/iterator_range_size.hpp>
 #include <boost/compute/container/detail/scalar.hpp>
@@ -47,7 +47,7 @@ inline InputIterator serial_find_extrema(InputIterator first,
         "}\n" <<
         "*index = value_index;\n";
 
-    size_t index_arg_index = k.add_arg<uint_ *>("__global", "index");
+    size_t index_arg_index = k.add_arg<uint_ *>(memory_object::global_memory, "index");
     size_t size_arg_index = k.add_arg<uint_>("size");
 
     kernel kernel = k.compile(context);

@@ -11,11 +11,13 @@
 #ifndef BOOST_COMPUTE_CONTEXT_HPP
 #define BOOST_COMPUTE_CONTEXT_HPP
 
+#include <vector>
+
 #include <boost/throw_exception.hpp>
 
 #include <boost/compute/config.hpp>
 #include <boost/compute/device.hpp>
-#include <boost/compute/exception/context_error.hpp>
+#include <boost/compute/exception/opencl_error.hpp>
 #include <boost/compute/detail/assert_cl_success.hpp>
 
 namespace boost {
@@ -63,12 +65,32 @@ public:
         cl_device_id device_id = device.id();
 
         cl_int error = 0;
-        m_context = clCreateContext(properties,
-                                    1,
-                                    &device_id,
-                                    default_error_handler,
-                                    static_cast<void *>(this),
-                                    &error);
+        m_context = clCreateContext(properties, 1, &device_id, 0, 0, &error);
+
+        if(!m_context){
+            BOOST_THROW_EXCEPTION(opencl_error(error));
+        }
+    }
+
+    /// Creates a new context for \p devices with \p properties.
+    ///
+    /// \see_opencl_ref{clCreateContext}
+    explicit context(const std::vector<device> &devices,
+                     const cl_context_properties *properties = 0)
+    {
+        BOOST_ASSERT(!devices.empty());
+
+        cl_int error = 0;
+
+        m_context = clCreateContext(
+            properties,
+            static_cast<cl_uint>(devices.size()),
+            reinterpret_cast<const cl_device_id *>(&devices[0]),
+            0,
+            0,
+            &error
+        );
+
         if(!m_context){
             BOOST_THROW_EXCEPTION(opencl_error(error));
         }
@@ -93,6 +115,7 @@ public:
         }
     }
 
+    /// Copies the context object from \p other to \c *this.
     context& operator=(const context &other)
     {
         if(this != &other){
@@ -148,6 +171,8 @@ public:
         return const_cast<cl_context &>(m_context);
     }
 
+    /// Returns the device for the context. If the context contains multiple
+    /// devices, the first is returned.
     device get_device() const
     {
         size_t count = 0;
@@ -171,6 +196,12 @@ public:
         }
 
         return device(id);
+    }
+
+    /// Returns a vector of devices for the context.
+    std::vector<device> get_devices() const
+    {
+        return get_info<std::vector<device> >(CL_CONTEXT_DEVICES);
     }
 
     /// Returns information about the context.
@@ -203,24 +234,6 @@ public:
     operator cl_context() const
     {
         return m_context;
-    }
-
-private:
-    // this function is registered as the default error handler for every
-    // context when it is created. user_data is the 'this' pointer for the
-    // associated context object. this function simply throws an exception
-    // containing the context error information.
-    static void BOOST_COMPUTE_CL_CALLBACK
-    default_error_handler(const char *errinfo,
-                          const void *private_info,
-                          size_t cb,
-                          void *user_data)
-    {
-        context *this_ = static_cast<context *>(user_data);
-
-        BOOST_THROW_EXCEPTION(
-            context_error(this_, errinfo, private_info, cb)
-        );
     }
 
 private:

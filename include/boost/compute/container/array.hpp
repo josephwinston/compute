@@ -23,6 +23,7 @@
 #include <boost/compute/algorithm/fill.hpp>
 #include <boost/compute/algorithm/swap_ranges.hpp>
 #include <boost/compute/iterator/buffer_iterator.hpp>
+#include <boost/compute/type_traits/detail/capture_traits.hpp>
 #include <boost/compute/detail/buffer_value.hpp>
 
 namespace boost {
@@ -31,7 +32,19 @@ namespace compute {
 /// \class array
 /// \brief A fixed-size container.
 ///
-/// \see vector<T>
+/// The array container is very similar to the \ref vector container except
+/// its size is fixed at compile-time rather than being dynamically resizable
+/// at run-time.
+///
+/// For example, to create a fixed-size array with eight values on the device:
+/// \code
+/// boost::compute::array<int, 8> values(context);
+/// \endcode
+///
+/// The Boost.Compute \c array class provides a STL-like API and is modeled
+/// after the \c std::array class from the C++ standard library.
+///
+/// \see \ref vector "vector<T>"
 template<class T, std::size_t N>
 class array
 {
@@ -243,6 +256,23 @@ struct set_kernel_arg<array<T, N> >
         kernel_.set_arg(index, array.get_buffer());
     }
 };
+
+// for capturing array<T, N> with BOOST_COMPUTE_CLOSURE()
+template<class T, size_t N>
+struct capture_traits<array<T, N> >
+{
+    static std::string type_name()
+    {
+        return std::string("__global ") + ::boost::compute::type_name<T>() + "*";
+    }
+};
+
+// meta_kernel streaming operator for array<T, N>
+template<class T, size_t N>
+meta_kernel& operator<<(meta_kernel &k, const array<T, N> &array)
+{
+  return k << k.get_buffer_identifier<T>(array.get_buffer());
+}
 
 } // end detail namespace
 } // end compute namespace

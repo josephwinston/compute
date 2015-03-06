@@ -16,6 +16,7 @@
 #include <boost/compute/command_queue.hpp>
 #include <boost/compute/detail/meta_kernel.hpp>
 #include <boost/compute/detail/iterator_range_size.hpp>
+#include <boost/compute/memory/local_buffer.hpp>
 
 namespace boost {
 namespace compute {
@@ -35,7 +36,7 @@ inline void serial_insertion_sort(Iterator first,
     }
 
     meta_kernel k("serial_insertion_sort");
-    size_t local_data_arg = k.add_arg<T *>("__local", "data");
+    size_t local_data_arg = k.add_arg<T *>(memory_object::local_memory, "data");
     size_t count_arg = k.add_arg<uint_>("n");
 
     k <<
@@ -64,7 +65,7 @@ inline void serial_insertion_sort(Iterator first,
 
     const context &context = queue.get_context();
     ::boost::compute::kernel kernel = k.compile(context);
-    kernel.set_arg(local_data_arg, static_cast<uint_>(count * sizeof(T)), 0);
+    kernel.set_arg(local_data_arg, local_buffer<T>(count));
     kernel.set_arg(count_arg, static_cast<uint_>(count));
 
     queue.enqueue_task(kernel);
@@ -98,8 +99,8 @@ inline void serial_insertion_sort_by_key(KeyIterator keys_first,
     }
 
     meta_kernel k("serial_insertion_sort_by_key");
-    size_t local_keys_arg = k.add_arg<key_type *>("__local", "keys");
-    size_t local_data_arg = k.add_arg<value_type *>("__local", "data");
+    size_t local_keys_arg = k.add_arg<key_type *>(memory_object::local_memory, "keys");
+    size_t local_data_arg = k.add_arg<value_type *>(memory_object::local_memory, "data");
     size_t count_arg = k.add_arg<uint_>("n");
 
     k <<

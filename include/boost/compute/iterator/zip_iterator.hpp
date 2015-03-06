@@ -15,21 +15,22 @@
 #include <iterator>
 
 #include <boost/config.hpp>
-#include <boost/mpl/vector.hpp>
-#include <boost/mpl/transform.hpp>
-#include <boost/mpl/back_inserter.hpp>
 #include <boost/fusion/algorithm/iteration/for_each.hpp>
 #include <boost/iterator/iterator_facade.hpp>
+#include <boost/mpl/back_inserter.hpp>
+#include <boost/mpl/transform.hpp>
+#include <boost/mpl/vector.hpp>
 #include <boost/preprocessor/repetition.hpp>
+#include <boost/tuple/tuple.hpp>
+#include <boost/tuple/tuple_comparison.hpp>
 
 #include <boost/compute/config.hpp>
 #include <boost/compute/functional.hpp>
-#include <boost/compute/types/tuple.hpp>
-#include <boost/compute/type_traits/type_name.hpp>
 #include <boost/compute/detail/meta_kernel.hpp>
-#include <boost/compute/detail/is_device_iterator.hpp>
 #include <boost/compute/detail/mpl_vector_to_tuple.hpp>
-
+#include <boost/compute/types/tuple.hpp>
+#include <boost/compute/type_traits/is_device_iterator.hpp>
+#include <boost/compute/type_traits/type_name.hpp>
 
 namespace boost {
 namespace compute {
@@ -159,6 +160,14 @@ void decrement_iterator(Iterator &i)
 
 } // end detail namespace
 
+/// \class zip_iterator
+/// \brief A zip iterator adaptor.
+///
+/// The zip_iterator class combines values from multiple input iterators. When
+/// dereferenced it returns a tuple containing each value at the current
+/// position in each input range.
+///
+/// \see make_zip_iterator()
 template<class IteratorTuple>
 class zip_iterator : public detail::zip_iterator_base<IteratorTuple>::type
 {
@@ -249,6 +258,19 @@ private:
     IteratorTuple m_iterators;
 };
 
+/// Creates a zip_iterator for \p iterators.
+///
+/// \param iterators a tuple of input iterators to zip together
+///
+/// \return a \c zip_iterator for \p iterators
+///
+/// For example, to zip together iterators from three vectors (\c a, \c b, and
+/// \p c):
+/// \code
+/// auto zipped = boost::compute::make_zip_iterator(
+///     boost::make_tuple(a.begin(), b.begin(), c.begin())
+/// );
+/// \endcode
 template<class IteratorTuple>
 inline zip_iterator<IteratorTuple>
 make_zip_iterator(IteratorTuple iterators)
@@ -256,19 +278,11 @@ make_zip_iterator(IteratorTuple iterators)
     return zip_iterator<IteratorTuple>(iterators);
 }
 
-namespace detail {
+/// \internal_ (is_device_iterator specialization for zip_iterator)
+template<class IteratorTuple>
+struct is_device_iterator<zip_iterator<IteratorTuple> > : boost::true_type {};
 
-// is_device_iterator specialization for zip_iterator
-template<class Iterator>
-struct is_device_iterator<
-    Iterator,
-    typename boost::enable_if<
-        boost::is_same<
-            zip_iterator<typename Iterator::iterator_tuple>,
-            typename boost::remove_const<Iterator>::type
-        >
-    >::type
-> : public boost::true_type {};
+namespace detail {
 
 // get<N>() specialization for zip_iterator
 /// \internal_

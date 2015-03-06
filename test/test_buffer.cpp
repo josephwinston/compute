@@ -13,6 +13,7 @@
 
 #include <boost/compute/buffer.hpp>
 #include <boost/compute/system.hpp>
+#include <boost/bind.hpp>
 
 #include "context_setup.hpp"
 
@@ -99,6 +100,7 @@ BOOST_AUTO_TEST_CASE(clone_buffer)
     boost::compute::buffer buffer2 = buffer1.clone(queue);
     BOOST_CHECK(buffer1.get() != buffer2.get());
     BOOST_CHECK_EQUAL(buffer1.size(), buffer2.size());
+    BOOST_CHECK(buffer1.get_memory_flags() == buffer2.get_memory_flags());
 }
 
 #ifdef CL_VERSION_1_1
@@ -123,6 +125,40 @@ BOOST_AUTO_TEST_CASE(destructor_callback)
     }
     BOOST_CHECK(invoked == true);
 }
+
+static void BOOST_COMPUTE_CL_CALLBACK
+destructor_templated_callback_function(bool *flag)
+{
+    *flag = true;
+}
+
+BOOST_AUTO_TEST_CASE(destructor_templated_callback)
+{
+    bool invoked = false;
+    {
+        boost::compute::buffer buf(context, 128);
+        buf.set_destructor_callback(boost::bind(destructor_templated_callback_function, &invoked));
+    }
+    BOOST_CHECK(invoked == true);
+}
+
+BOOST_AUTO_TEST_CASE(create_subbuffer)
+{
+    size_t base_addr_align = device.get_info<CL_DEVICE_MEM_BASE_ADDR_ALIGN>() / 8;
+    size_t multiplier = 16;
+    size_t buffer_size = base_addr_align * multiplier;
+    size_t subbuffer_size = 64;
+    boost::compute::buffer buffer(context, buffer_size);
+
+    for(size_t i = 0; i < multiplier; ++i)
+    {
+        boost::compute::buffer subbuffer = buffer.create_subbuffer(
+              boost::compute::buffer::read_write, base_addr_align * i, subbuffer_size);
+        BOOST_CHECK(buffer.get() != subbuffer.get());
+        BOOST_CHECK_EQUAL(subbuffer.size(), subbuffer_size);
+    }
+}
+
 #endif // CL_VERSION_1_1
 
 BOOST_AUTO_TEST_CASE(create_buffer_doctest)

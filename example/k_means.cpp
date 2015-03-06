@@ -12,17 +12,19 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include <boost/compute/source.hpp>
 #include <boost/compute/system.hpp>
-#include <boost/compute/image2d.hpp>
 #include <boost/compute/container/vector.hpp>
-#include <boost/compute/random/default_random_engine.hpp>
-#include <boost/compute/random/uniform_real_distribution.hpp>
+#include <boost/compute/image/image2d.hpp>
 #include <boost/compute/interop/opencv/core.hpp>
 #include <boost/compute/interop/opencv/highgui.hpp>
+#include <boost/compute/random/default_random_engine.hpp>
+#include <boost/compute/random/uniform_real_distribution.hpp>
+#include <boost/compute/utility/dim.hpp>
+#include <boost/compute/utility/source.hpp>
 
 namespace compute = boost::compute;
 
+using compute::dim;
 using compute::int_;
 using compute::float_;
 using compute::float2_;
@@ -140,11 +142,7 @@ int main()
 
     // create output image
     compute::image2d image(
-        context,
-        CL_MEM_READ_WRITE,
-        compute::image_format(CL_RGBA, CL_UNSIGNED_INT8),
-        width,
-        height
+        context, width, height, compute::image_format(CL_RGBA, CL_UNSIGNED_INT8)
     );
 
     // program with two kernels, one to fill the image with white, and then
@@ -210,10 +208,9 @@ int main()
     compute::kernel fill_kernel(draw_program, "fill_gray");
     fill_kernel.set_arg(0, image);
 
-    const size_t offset[] = { 0, 0 };
-    const size_t bounds[] = { width, height };
-
-    queue.enqueue_nd_range_kernel(fill_kernel, 2, offset, bounds, 0);
+    queue.enqueue_nd_range_kernel(
+        fill_kernel, dim(0, 0), dim(width, height), dim(1, 1)
+    );
 
     // draw points colored according to cluster
     compute::kernel draw_kernel(draw_program, "draw_points");

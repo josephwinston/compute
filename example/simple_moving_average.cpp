@@ -12,11 +12,11 @@
 #include <cstdlib>
 
 #include <boost/compute/core.hpp>
-#include <boost/compute/source.hpp>
 #include <boost/compute/algorithm/copy.hpp>
 #include <boost/compute/algorithm/inclusive_scan.hpp>
 #include <boost/compute/container/vector.hpp>
 #include <boost/compute/type_traits/type_name.hpp>
+#include <boost/compute/utility/source.hpp>
 
 namespace compute = boost::compute;
 
@@ -32,7 +32,7 @@ compute::program make_sma_program(const compute::context& context)
         {
             const int gid = get_global_id(0);
 
-            float cumValues = 0.;
+            float cumValues = 0.f;
             int endIdx = gid + wSize/2;
             int startIdx = gid -1 - wSize/2;
 

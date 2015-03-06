@@ -11,20 +11,27 @@
 #include <iostream>
 #include <algorithm>
 
+#include <QtGlobal>
+#if QT_VERSION >= 0x050000
+#include <QtWidgets>
+#else
 #include <QtGui>
+#endif
 #include <QtOpenGL>
 
 #include <boost/program_options.hpp>
 
+#ifndef Q_MOC_RUN
 #include <boost/compute/command_queue.hpp>
 #include <boost/compute/kernel.hpp>
 #include <boost/compute/program.hpp>
-#include <boost/compute/source.hpp>
 #include <boost/compute/system.hpp>
-#include <boost/compute/image2d.hpp>
-#include <boost/compute/image_sampler.hpp>
+#include <boost/compute/image/image2d.hpp>
+#include <boost/compute/image/image_sampler.hpp>
 #include <boost/compute/interop/qt.hpp>
 #include <boost/compute/interop/opengl.hpp>
+#include <boost/compute/utility/source.hpp>
+#endif // Q_MOC_RUN
 
 namespace compute = boost::compute;
 namespace po = boost::program_options;
@@ -103,7 +110,7 @@ void ImageWidget::initializeGL()
         compute::qt_qimage_format_to_image_format(qt_image_.format());
 
     image_ = compute::image2d(
-        context_, CL_MEM_READ_ONLY, format, qt_image_.width(), qt_image_.height()
+        context_, qt_image_.width(), qt_image_.height(), format, CL_MEM_READ_ONLY
     );
 
     // transfer image to the device
@@ -120,6 +127,12 @@ void ImageWidget::initializeGL()
 
 void ImageWidget::resizeGL(int width, int height)
 {
+#if QT_VERSION >= 0x050000
+    // scale height/width based on device pixel ratio
+    width /= windowHandle()->devicePixelRatio();
+    height /= windowHandle()->devicePixelRatio();
+#endif
+
     // resize viewport
     glViewport(0, 0, width, height);
 

@@ -13,8 +13,6 @@
 
 #include <iterator>
 
-#include <boost/utility/result_of.hpp>
-
 #include <boost/compute/system.hpp>
 #include <boost/compute/functional.hpp>
 #include <boost/compute/detail/meta_kernel.hpp>
@@ -26,6 +24,8 @@
 #include <boost/compute/algorithm/detail/reduce_on_gpu.hpp>
 #include <boost/compute/algorithm/detail/serial_reduce.hpp>
 #include <boost/compute/detail/iterator_range_size.hpp>
+#include <boost/compute/memory/local_buffer.hpp>
+#include <boost/compute/type_traits/result_of.hpp>
 
 namespace boost {
 namespace compute {
@@ -43,7 +43,7 @@ size_t reduce(InputIterator first,
         std::iterator_traits<InputIterator>::value_type
         input_type;
     typedef typename
-        boost::tr1_result_of<BinaryFunction(input_type, input_type)>::type
+        boost::compute::result_of<BinaryFunction(input_type, input_type)>::type
         result_type;
 
     const context &context = queue.get_context();
@@ -53,8 +53,8 @@ size_t reduce(InputIterator first,
 
     if(block_count != 0){
         meta_kernel k("block_reduce");
-        size_t output_arg = k.add_arg<result_type *>("__global", "output");
-        size_t block_arg = k.add_arg<input_type *>("__local", "block");
+        size_t output_arg = k.add_arg<result_type *>(memory_object::global_memory, "output");
+        size_t block_arg = k.add_arg<input_type *>(memory_object::local_memory, "block");
 
         k <<
             "const uint gid = get_global_id(0);\n" <<
@@ -82,7 +82,7 @@ size_t reduce(InputIterator first,
 
         kernel kernel = k.compile(context);
         kernel.set_arg(output_arg, result.get_buffer());
-        kernel.set_arg(block_arg, block_size * sizeof(input_type), 0);
+        kernel.set_arg(block_arg, local_buffer<input_type>(block_size));
 
         queue.enqueue_1d_range_kernel(kernel,
                                       0,
@@ -97,7 +97,7 @@ size_t reduce(InputIterator first,
         meta_kernel k("extra_serial_reduce");
         size_t count_arg = k.add_arg<uint_>("count");
         size_t offset_arg = k.add_arg<uint_>("offset");
-        size_t output_arg = k.add_arg<result_type *>("__global", "output");
+        size_t output_arg = k.add_arg<result_type *>(memory_object::global_memory, "output");
         size_t output_offset_arg = k.add_arg<uint_>("output_offset");
 
         k <<
@@ -123,7 +123,7 @@ size_t reduce(InputIterator first,
 
 template<class InputIterator, class BinaryFunction>
 inline vector<
-    typename boost::tr1_result_of<
+    typename boost::compute::result_of<
         BinaryFunction(
             typename std::iterator_traits<InputIterator>::value_type,
             typename std::iterator_traits<InputIterator>::value_type
@@ -140,7 +140,7 @@ block_reduce(InputIterator first,
         std::iterator_traits<InputIterator>::value_type
         input_type;
     typedef typename
-        boost::tr1_result_of<BinaryFunction(input_type, input_type)>::type
+        boost::compute::result_of<BinaryFunction(input_type, input_type)>::type
         result_type;
 
     const context &context = queue.get_context();
@@ -164,16 +164,13 @@ inline void generic_reduce(InputIterator first,
         std::iterator_traits<InputIterator>::value_type
         input_type;
     typedef typename
-        boost::tr1_result_of<BinaryFunction(input_type, input_type)>::type
+        boost::compute::result_of<BinaryFunction(input_type, input_type)>::type
         result_type;
 
     const device &device = queue.get_device();
     const context &context = queue.get_context();
 
     size_t count = detail::iterator_range_size(first, last);
-    if(count == 0){
-        return;
-    }
 
     if(device.type() & device::cpu){
         boost::compute::vector<result_type> value(1, context);
@@ -245,9 +242,17 @@ inline void dispatch_reduce(InputIterator first,
 ///
 /// If no function is specified, \c plus will be used.
 ///
-/// The difference between the reduce() function and the accumulate()
-/// function is that reduce() requires the binary operator to be
-/// commutative.
+/// \param first first element in the input range
+/// \param last last element in the input range
+/// \param result iterator pointing to the output
+/// \param function binary reduction function
+/// \param queue command queue to perform the operation
+///
+/// The \c reduce() algorithm assumes that the binary reduction function is
+/// associative. When used with non-associative functions the result may
+/// be non-deterministic and vary in precision. Notably this affects the
+/// \c plus<float>() function as floating-point addition is not associative
+/// and may produce slightly different results than a serial algorithm.
 ///
 /// This algorithm supports both host and device iterators for the
 /// result argument. This allows for values to be reduced and copied
@@ -258,6 +263,11 @@ inline void dispatch_reduce(InputIterator first,
 ///
 /// \snippet test/test_reduce.cpp sum_int
 ///
+/// Note that while the the \c reduce() algorithm is conceptually identical to
+/// the \c accumulate() algorithm, its implementation is substantially more
+/// efficient on parallel hardware. For more information, see the documentation
+/// on the \c accumulate() algorithm.
+///
 /// \see accumulate()
 template<class InputIterator, class OutputIterator, class BinaryFunction>
 inline void reduce(InputIterator first,
@@ -266,6 +276,10 @@ inline void reduce(InputIterator first,
                    BinaryFunction function,
                    command_queue &queue = system::default_queue())
 {
+    if(first == last){
+        return;
+    }
+
     detail::dispatch_reduce(first, last, result, function, queue);
 }
 
@@ -277,6 +291,10 @@ inline void reduce(InputIterator first,
                    command_queue &queue = system::default_queue())
 {
     typedef typename std::iterator_traits<InputIterator>::value_type T;
+
+    if(first == last){
+        return;
+    }
 
     detail::dispatch_reduce(first, last, result, plus<T>(), queue);
 }
